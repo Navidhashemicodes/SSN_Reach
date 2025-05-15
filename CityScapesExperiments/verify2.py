@@ -1,4 +1,12 @@
+import os
 import torch
+import numpy as np
+from scipy.stats import beta
+from time import time
+from torch.cuda.amp import autocast
+import matlab.engine
+import scipy.io
+
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
@@ -34,15 +42,6 @@ import torch.nn.functional as F
 import yaml
 import argparse
 
-
-"""Command-Line Arguments
-
-[1] <config_name>: path to a config file
-
-Example usage:
-
-python pyversion.py --config config.yaml
-"""
 
 torch.manual_seed(0)
 
@@ -88,7 +87,6 @@ def batched_inference(inputs, model, batch_size, device='cuda'):
     return torch.cat(results, dim=0)
 
 
-
 args = parse_args()
 config = load_config(args.config)
 
@@ -107,7 +105,7 @@ N_perturbed = config['N_perturbed'] # number of pixels perturbed (if it's RGB th
 Ns = config['Ns'] # size of calibration dataset
 rank = config['rank'] # we choose a sample at specific rank? make this a command-line argument... something like Ns-1 or 1900 if Ns=2000
 delta_rgb = config['delta_rgb'] # amount of pixel perturbation allowed, e.g. 25 if wanted 25/255 perturbation
-N = config['N'] # total number of samples for learning the principal directions (train the surrogate model)
+Nt = config['N'] # total number of samples for learning the principal directions (train the surrogate model)
 # we'll want to increase N for the experiments... something like 2000?
 N_dir = config['N_dir'] # number of samples used for direction learning
 # we'll also want to increase N_dir... something like 150
@@ -128,6 +126,16 @@ model_path = os.path.join(base_dir, 'models', 'hrnet_cs_8090_torch11.pth')
 label_path = os.path.join(base_dir, 'data', 'gtFine_trainvaltest', 'val', image_parent_dir, label_name)
 
 
+
+start_loc = (512-20, 512-20)  # modify as needed
+Nsp = 2
+rank = 9
+guarantee = 0.99
+de = delta_rgb / 255.0
+# Nt = 4  # Total number of samples
+# N_dir = 2  # Number of samples used for direction learning
+epsilon = 0.001
+
 # --- Load the model ---
 if model_name == "hrnet":
     # Build and load model
@@ -147,7 +155,6 @@ else: # model_name == "mask2former"
     model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-large-cityscapes-semantic").to(device)
 
 model.eval()
-
 
 # --- Load and preprocess image ---
 # TODO: Fix this section...
@@ -206,7 +213,7 @@ label = Image.open(label_path)
 label = resize_transform(label)
 label = label_transform(label)
 
-# --- Apply darkening attack
+# --- Apply darkening attack ---
 ct = 0
 indices = []
 
@@ -225,7 +232,6 @@ for i in range(start_loc[0], H):
 
 indices = np.array(indices)
 
-
 # --- Normalize image ---
 # TODO:
 mean_vals = np.array([0.485, 0.456, 0.406])
@@ -240,130 +246,71 @@ at_pil = Image.fromarray(at_im_uint8)
 at_im_tensor = processor(images=at_pil, return_tensors="pt")["pixel_values"].to(device)
 
 # --- Run the model ---
-with torch.no_grad():
-    if model_name == "hrnet":
-        output = model(at_im_tensor)  # [B, C, H, W]
-        # pred = output.argmax(1).squeeze(0).cpu().numpy()  # [H, W]
-        # pred = F.interpolate(output, size=(512, 1024), mode='bilinear', align_corners=True)
-        predicted_classes = F.interpolate(output, size=(1024, 2048), mode='bilinear', align_corners=True)
-        predicted_classes = torch.argmax(predicted_classes, dim=1).squeeze(0)  # shape: (512, 1024)
-
-    elif model_name == "segformer":
-        outputs = model(at_im_tensor)  # This will now be [1, 3, 1024, 1024]
-        logits = outputs.logits  # shape: [1, 19, 128, 128]
-
-        # Upsample to 1024x1024
-        logits = F.interpolate(logits, size=(1024, 1024), mode='bilinear', align_corners=False)
-        predicted_classes = torch.argmax(logits, dim=1).squeeze().cpu().numpy()  # shape: [1024, 1024]
-
-    else: # model_name == "mask2former"
-        outputs = model(at_im_tensor) # this might break...
-        predicted_classes = processor.post_process_semantic_segmentation(outputs, target_sizes=[(1024, 1024)])[0]
-        predicted_classes = predicted_classes.cpu().numpy()
-        # gt = label.squeeze(0).numpy()  # ground truth (H, W)
-
-    gt = label.squeeze().numpy()
-
-print("Inference complete. Predicted shape:", predicted_classes.shape)
+# with torch.no_grad():
+#     output = UnetFunc(at_im_tensor)
 
 
-# --- Output ---
-# TODO:
+# import matplotlib.pyplot as plt
 
-img_shape = (height, width, 3)
-std_vals = torch.tensor([0.229, 0.224, 0.225])
+# # Convert output to binary: 1 if > 0, else 0
+# binary_output = (output > 0).int().squeeze().detach().cpu().numpy()
 
-def mat_generator_no_third(values, indices, original_dim):
-    # TODO:
-    """Need to edit this to support batch computation"""
+# # Plotting as black and white
+# plt.figure(figsize=(6, 6))
+# plt.imshow(binary_output, cmap='gray', vmin=0, vmax=1)
+# plt.title('Binarized Segmentation Output')
+# plt.axis('off')
+# plt.show()
+
+
+def mat_generator_no_third(values: torch.Tensor, indices: torch.Tensor, original_dim: tuple):
     Matrix = torch.zeros(original_dim, device=values.device, dtype=values.dtype)
     N_perturbed = indices.shape[0]
     t = 0
-    for c in range(3):
-        for i in range(N_perturbed):
-            row, col = indices[i]
-            Matrix[row, col, c] = values[t]
-            t += 1
+    for i in range(N_perturbed):
+        row, col = indices[i]
+        Matrix[:,:,row, col] = values[:,t].unsqueeze(1)
+        t += 1
     return Matrix
+
 
 Input = at_im_tensor
 
-def generate_data_chunk(i, indices, de, std_vals, Input, batched_infer):
-    # TODO:
-    """What is this???""" 
-    """Need to edit this to support batch computation"""
-    """Look up vmap... this could come in handy"""
-    # d_at is the amount of perturbation we add to the already darkening attacked image
-    Rand = torch.rand(3 * N_perturbed).to(device)
-    Rand_matrix = mat_generator_no_third(Rand, indices, (height, width, 3))
-    d_at = torch.zeros((height, width, 3))
-    for c in range(3):
-        d_at[:, :, c] = de * Rand_matrix[:, :, c] / std_vals[c]
-    d_at_tensor = d_at.permute(2, 0, 1).unsqueeze(0).to(device)
-    Inp = Input + d_at_tensor
-    # Inp_tensor = Inp.permute(2, 0, 1).unsqueeze(0).float()
+def generate_data_chunk(N, indices, de, Inputs, batched_infer):
+    
+    """ Function to generate the training data for one instance in parallel. """
+    Rand = torch.rand(N, 3 * N_perturbed).to(device)
+    Rand_matrix = mat_generator_no_third(Rand, indices, (N, 3, height, width))
+    d_at = de * Rand_matrix
+    Inp = Inputs + d_at
     Inp_tensor = Inp.float()
 
-    # Direct BiSeNet inference (model is already preloaded)
     with torch.no_grad():
-        out = batched_infer(Inp_tensor, model, batch_size=10)  # (1, 3, 720, 960) -> (1, 12, 720, 960)
-
-    """AttributeError: 'SemanticSegmenterOutput' object has no attribute 'squeeze'... 
-    
-    TODO: In other words, I need to address this with cases depending on what model we're using...
-    """
-
-    # if model_name == "mask2former" or "segformer":
-    #     logits = out.logits
-    #     logits = F.interpolate(logits, size=(1024, 1024), mode='bilinear', align_corners=False)
-
-    #     # print(f'this logits: {logits.shape}')
-    #     # out = torch.argmax(logits, dim=1)
-    #     # print(f'this out: {out.shape}')
-    #     out = logits.squeeze(0).permute(1, 2, 0)
-    # else:
-    #     out = out.squeeze(0).permute(1, 2, 0)  # (720, 960, 12)
+        out = batched_infer(Inp_tensor, model, batch_size=2)
     
     return out, Rand
 
-# X = torch.zeros((3 * N_perturbed, N))
-# if model_name == "segformer":
-    # Y = torch.zeros((256, 256, num_classes, N))
-# elif model_name == "mask2former":
-    # pass
-# else:
-    # pass
 
 
-# start timing
 t0 = time()
 
 
-Inputs = Input.repeat(N, 1, 1, 1)
 
-# initialize Y and X
-Y, X = generate_data_chunk(N, indices, de, std_vals, Inputs, batched_inference)
+Inputs = Input.repeat(Nt,1,1,1)
+Y, X = generate_data_chunk(Nt, indices, de, Inputs, batched_inference)
 
-# results = Parallel(n_jobs=10, backend='loky', verbose=10)(
-#         delayed(generate_data_chunk)(i, indices, de, std_vals, Input, model) for i in range(N))
-
-# print(results)
-
-# collect results and assign them
-# for i, (out, Rand) in enumerate(results):
-#     Y[:, :, :, i] = out
-#     X[:, i] = Rand
 
 train_data_run_1 = time() - t0
 
-# Y = Y.reshape(Y.shape[0], -1)
-Y = Y.reshape(-1, Y.shape[-1])
 
-assert N_dir <= N, "Requested more samples than available!"
+# Y = Y.view(Y.shape[0], -1)
+Y = Y.reshape(Y.shape[0], -1)
 
-selected_indices = torch.randperm(N)[:N_dir]
 
-# select and move to GPU
+assert N_dir <= Nt, "Requested more samples than available!"
+
+selected_indices = torch.randperm(Nt)[:N_dir]
+
 X_dir = X[selected_indices, ...].to(device)
 Y_dir = Y[selected_indices, ...].to(device)
 
@@ -501,55 +448,14 @@ def compute_directions(X , device, batch_size):
         
     return A_list , Direction_training_time
 
-    # Send the tensor X to GPU
-    X = X.to(device)
+Directions, Direction_Training_time = compute_directions(Y_dir, device, 5)
 
-    # Print the final shape
-    print(X.shape)  # Should be (64*84*11, 5*2000)
+Directions = torch.stack([d.squeeze(-1) for d in Directions])
 
 
-    # Initialize the input data X and parameters A
-    n = X.shape[0]
-    m = X.shape[1]  # Number of data points
-
-    # Set hyperparameters
-
-    batch_size = 5  # Batch size for training
-
-    # Initialize Cov_prev with a very high value to start
-    Cov_prev = float('inf')
-
-
-    # Perform deflation
-    t0 = time()
-    A_list, X_updated = deflation(X, n, m, device, batch_size, Cov_prev)
-    Direction_training_time = time() - t0
-    # Print the final updated X and principal directions
-    print("Updated X shape:", X_updated.shape)
-    print("Principal directions found:")
-    for i, A in enumerate(A_list):
-        print(f"A{i+1}: {A}")
-        
-    return A_list , Direction_training_time
-
-Directions, Direction_Training_time = compute_directions(Y_dir, device, batch_size=30)
-
-Directions = torch.stack([d.squeeze(-1) for d in Directions]).cpu()
-
-# compute stats of Y on CPU
-min_Y, _ = Y.min(dim=1, keepdim=True)
-max_Y, _ = Y.max(dim=1, keepdim=True)
-mean_Y = Y.mean(dim=1, keepdim=True)
-
-# compute C on CPU, then move to GPU
-# Compute C on CPU, then move to GPU
-C = 20.0 * (0.01 * mean_Y + (0.05 - 0.01) * 0.5 * (min_Y + max_Y))  # (720, 1, 19, N_total)
-
-# Reshape Y and C to (dim, N_total) for matmul
-
-# Compute dYV = Directionsᵀ @ (Y - C)
-dYV = Directions @ (Y - C)  # (N_dir, N_total)
-
+C = 20 * (epsilon * Y.mean(dim=0) + (0.05 - epsilon) * 0.5 * (Y.min(dim=0).values + Y.max(dim=0).values))
+dY = (Y - C.unsqueeze(0)).to(device)
+dYV = dY @ Directions.T
 
 torch.cuda.empty_cache()
 
@@ -687,26 +593,28 @@ def Trainer_ReLU(x , y , device, epochs, save_path):
 
 current_dir = os.getcwd()
 save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
-epochs = 500 # TODO: make this a CLI arg?
+epochs = 50
 small_net, Model_training_time = Trainer_ReLU(X, dYV, device, epochs, save_path)
 
 with torch.no_grad():
-    pred = small_net(X)
+    pred = small_net(X) 
 
-    approx_Y = pred @ Directions + C.unsqueeze(0)
+    approx_Y = pred @ Directions  + C.unsqueeze(0).to(device)  # shape: same as Y
 
 t0 = time()
-residuals = (Y - approx_Y).abs()
+residuals = (Y.to(device) - approx_Y.to(device)).abs()
 threshold_normal = 1e-5
 res_max = residuals.max(dim=0).values
 res_max[res_max < threshold_normal] = threshold_normal
 
-trn_time1 = time() - t0
+trn_time1 = time()-t0
 
-ell=  rank
+
+ell = rank
 Failure_chance_of_guarantee = beta.cdf(guarantee, ell, Ns + 1 - ell)
 
-thelen = min(Ns, 2000)
+
+thelen = min(Ns, Nsp)
 if Ns > thelen:
     chunck_size = thelen
     Num_chunks = Ns // chunck_size
@@ -726,33 +634,29 @@ test_data_run = []
 res_test_time = []
 
 
-for nc, curr_len in enumerate(chunk_sizes):
-    torch.manual_seed(nc + 1) # why are we changing seed?
 
-    Y_test_nc = torch.zeros((height, width, num_classes, curr_len))
-    X_test_nc = torch.zeros((3 * N_perturbed, curr_len))
+for nc, curr_len in enumerate(chunk_sizes):
+    torch.manual_seed(nc+1)
 
     t0 = time()
+    
+    Inputs = Input.repeat(curr_len,1,1,1)
+    
+    Y_test_nc, X_test_nc = generate_data_chunk(curr_len, indices, de, Inputs, batched_inference)
 
-    results = Parallel(n_jobs=10, backend='loky', verbose=10)(
-            delayed(generate_data_chunk)(i, indices, de, std_vals, Input, model) for i in range(Ns))
-
-    for i, (out, Rand) in enumerate(results):
-        Y_test_nc[:, :, :, i] = out
-        X_test_nc[:, i] = Rand
 
     test_data_run.append(time() - t0)
 
-    Y_test = Y_test_nc.reshape((-1, curr_len))
+    Y_test = Y_test_nc.reshape(Y_test_nc.shape[0], -1).to(device)
     del Y_test_nc
 
     t1 = time()
-    pred = Directions.T @ small_net(X_test_nc.T).T + C
+    pred = small_net(X_test_nc) @ Directions  + C.unsqueeze(0).to(device)  # shape: (dim2, curr_len)
     res_tst = (Y_test - pred).abs()
-    Rs[ind:ind + curr_len] = torch.max(res_tst / res_max[:, None], dim=0).values
+    Rs[ind:ind + curr_len] = torch.max(res_tst / res_max.unsqueeze(0), dim=1).values
     res_test_time.append(time() - t1)
 
-    del Y_test, X_test_nc, res_tst
+    del Y_test,  X_test_nc, res_tst
     ind += curr_len
 
 
@@ -760,27 +664,28 @@ t0 = time()
 
 with torch.no_grad():
     Rs_sorted = torch.sort(Rs).values
-    R_star = Rs_sorted[ell]
+    R_star = Rs_sorted[ell]  # Assuming `ell` is defined
     Conf = R_star * res_max
 
 conformal_time = time() - t0
 
 current_dir = os.getcwd()
 save_path = os.path.join(current_dir, 'python_data.mat')
-c = C.numpy()
-conf = Conf.numpy()
-directions = Directions.numpy()
+c = C.cpu().numpy()
+conf = Conf.cpu().numpy()
+directions = Directions.cpu().numpy()
 
 scipy.io.savemat(save_path, {
     'Conf': conf, 'C': c, 'Directions': directions})
 
 del conf, c, directions
 
-# --- Start MATLAB ---
+
 eng = matlab.engine.start_matlab()
 
-# TODO: can I do string interpolation here?
+
 matlab_code = fr"""
+
 
 clear
 clc
@@ -801,8 +706,8 @@ L = cell(l2,1);
 L(:) = {{'poslin'}};
 Small_net.layers{{2}} = L ;
 
-dim2 = {height}*{width}*{num_classes}
-dimp = {height}*{width}
+dim2 = {height}*{width}*{num_classes};
+dimp = {height}*{width};
 
 tic
 H.V = [sparse(dim2,1) speye(dim2)];
@@ -832,7 +737,7 @@ I.nVar = l0;
 
 
 Principal_reach = ReLUNN_Reachability_starinit(I, Small_net, 'approx-star');
-Surrogate_reach = affineMap(Principal_reach , Directions.' , C);
+Surrogate_reach = affineMap(Principal_reach , Directions.' , C.');
 
 %%%%%%%%%%%%%%
 reachability_time = toc;
@@ -855,7 +760,6 @@ Ub_pixels = reshape(Ub , [dimp, {num_classes}]);
 %%%%%%%%%%%%%%
 projection_time = toc;
 
-
 clear  Surrogate_reach
 
 save("Matlab_data.mat", 'Lb_pixels', 'Ub_pixels', 'projection_time', 'reachability_time', 'conformal_time2')
@@ -863,7 +767,9 @@ save("Matlab_data.mat", 'Lb_pixels', 'Ub_pixels', 'projection_time', 'reachabili
 """
 
 eng.eval(matlab_code, nargout=0)
+
 eng.quit()
+
 
 current_dir = os.getcwd()
 mat_file_path = os.path.join(current_dir, 'Matlab_data.mat')
@@ -888,42 +794,21 @@ classes = [[[] for _ in range(width)] for _ in range(height)]
 
 for t in range(height * width):
     i = t % height
-    j = t % width
-    class_members = [k for k in range(num_classes) if mask_np[t, k]]
+    j = t // height
+    class_members = [k for k in range(12) if mask_np[t, k]]
+    classes[i][j] = class_members
 
 
+# img_tensor = torch.from_numpy(img).to(device)
 img = Image.open(image_path).convert('RGB')
 img_tensor = processor(images=img, return_tensors="pt")["pixel_values"]
+output = batched_inference(img_tensor, model, batch_size=1)
 
-with torch.no_grad():
-    if model_name == "hrnet":
-        output = model(img_tensor)  # [B, C, H, W]
-        predicted_classes = F.interpolate(output, size=(1024, 2048), mode='bilinear', align_corners=True)
-        predicted_classes = torch.argmax(predicted_classes, dim=1).squeeze(0)  # shape: (512, 1024)
+output_np = output.squeeze().cpu().numpy() # shape: [19, 1024, 1024]
+True_class_map = output_np.argmax(axis=0)  # shape: [1024, 1024]
+True_class = [[int(True_class_map[i, j]) for j in range(width)] for i in range(height)]
+# True_class = [[int(output_np[i, j] > 0) for j in range(width)] for i in range(height)]
 
-    elif model_name == "segformer":
-        output = model(img_tensor)  # This will now be [1, 3, 1024, 1024]
-        logits = outputs.logits  # shape: [1, 19, 128, 128]
-
-        # Upsample to 1024x1024
-        logits = F.interpolate(logits, size=(1024, 1024), mode='bilinear', align_corners=False)
-        predicted_classes = torch.argmax(logits, dim=1).squeeze().cpu().numpy()  # shape: [1024, 1024]
-
-    else: # model_name == "mask2former"
-        output = model(img_tensor) # this might break...
-        predicted_classes = processor.post_process_semantic_segmentation(outputs, target_sizes=[(1024, 1024)])[0]
-        predicted_classes = predicted_classes.cpu().numpy()
-
-# True_class = {}
-# for i in range(height):
-#     for j in range(width):
-#         _, True_class[(i, j)] = torch.max(output[0, :, i, j], 0)  # Assuming output shape is [1, C, H, W]
-
-True_class = {
-    (i, j): int(predicted_classes[i, j])
-    for i in range(height)
-    for j in range(width)
-}
 
 
 # Initialize counters
@@ -935,18 +820,18 @@ attacked = N_perturbed  # Assuming this is defined
 for i in range(height):
     for j in range(width):
         if len(classes[i][j]) == 1:
-            if classes[i][j] == True_class[(i, j)]:
+            if classes[i][j] == [True_class[i][j]]:
                 robust += 1
             else:
                 nonrobust += 1
         else:
-            if True_class[(i, j)] in classes[i][j]:
+            if True_class[i][j] in classes[i][j]:
                 unknown += 1
             else:
                 nonrobust += 1
 
 # Compute the robustness percentage
-dim_pic = height * width 
+dim_pic = height*width
 RV = 100 * robust / dim_pic
 
 print(f"Number of Robust pixels: {robust}")
@@ -971,7 +856,7 @@ save_dict = {
     "True_class": True_class,
     "classes": classes,
     "Conf": Conf,
-    "N": N,
+    "Nt": Nt,
     "N_dir": N_dir,
     "de": de,
     "ell": ell,
@@ -1006,9 +891,3 @@ for key, val in save_dict.items():
 save_name = f"CI_result_middle_guarantee_ReLU_relaxed_eps_{delta_rgb}_Npertubed_{N_perturbed}.pt"
     
 torch.save(save_dict, save_name)
-
-
-
-
-#
-
