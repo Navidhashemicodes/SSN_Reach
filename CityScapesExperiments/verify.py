@@ -1,6 +1,13 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+import random
+from time import time
+import gc
+
 import os
 import sys
-import torch
 import numpy as np
 from PIL import Image
 # from tqdm import tqdm
@@ -9,6 +16,7 @@ from time import time
 from joblib import Parallel, delayed
 # import matlab.engine
 import scipy.io
+import matlab.engine
 
 # loading models
 from transformers import SegformerFeatureExtractor, SegformerForSemanticSegmentation # SegFormer
@@ -275,23 +283,28 @@ def generate_data_chunk(i, indices, de, std_vals, Input, model):
 
     if model_name == "mask2former" or "segformer":
         logits = out.logits
-        out = torch.argmax(logits, dim=1)
+        logits = F.interpolate(logits, size=(1024, 1024), mode='bilinear', align_corners=False)
+
+        # print(f'this logits: {logits.shape}')
+        # out = torch.argmax(logits, dim=1)
+        # print(f'this out: {out.shape}')
+        out = logits.squeeze(0).permute(1, 2, 0)
     else:
         out = out.squeeze(0).permute(1, 2, 0)  # (720, 960, 12)
     
     return out, Rand
 
 # initialize Y and X
-# Y = torch.zeros((height, width, num_classes, N)) # ???
-# X = torch.zeros((3 * N_perturbed, N))
-
+Y = torch.zeros((height, width, num_classes, N)) # ???
 X = torch.zeros((3 * N_perturbed, N))
-if model_name == "segformer":
-    Y = torch.zeros((256, 256, num_classes, N))
-elif model_name == "mask2former":
-    pass
-else:
-    pass
+
+# X = torch.zeros((3 * N_perturbed, N))
+# if model_name == "segformer":
+    # Y = torch.zeros((256, 256, num_classes, N))
+# elif model_name == "mask2former":
+    # pass
+# else:
+    # pass
 
 # start timing
 t0 = time()
@@ -299,14 +312,12 @@ t0 = time()
 results = Parallel(n_jobs=10, backend='loky', verbose=10)(
         delayed(generate_data_chunk)(i, indices, de, std_vals, Input, model) for i in range(N))
 
-
+# print(results)
 
 # collect results and assign them
 for i, (out, Rand) in enumerate(results):
     Y[:, :, :, i] = out
     X[:, i] = Rand
-
-Y = processor.post_process_semantic_segmentation(Y, target_sizes=[(1024, 1024)])[0]
 
 train_data_run_1 = time() - t0
 
@@ -321,7 +332,139 @@ X_dir = X[:, selected_indices].to(device)
 Y_dir = Y[:, selected_indices].to(device)
 
 
-from Direction_training import compute_directions
+# from Direction_training import compute_directions
+def compute_f(A, X_batch):
+    """
+    Compute the function f(A) = (1 / (N * norm(A)^2)) * sum_i (A' * (X_i - mean(X)))^2
+    """
+    norm_A2 = torch.norm(A, p=2)
+    mean_X = torch.mean(X_batch, dim=1, keepdim=True)  
+    N = X_batch.shape[1]
+    dX = X_batch - mean_X
+    A_X = torch.matmul(A.T, dX)  # A' * (X - mean)
+    
+    # Compute covariance
+    cov_batch = (1 / (norm_A2)) * torch.sqrt( torch.sum(torch.pow(A_X, 2)) / N )
+    return cov_batch
+
+def deflation(X, n, m, device, batch_size, Cov_prev):
+    A_list = []  # To store all principal directions
+    round = -1
+    Largest = float('inf')
+
+    while True:
+        round += 1
+        # Initialize A for this round
+    
+        if round>0:
+            del X_batch
+            del X_proj
+            gc.collect()
+    
+        A = torch.randn(n, 1, requires_grad=True, device=device)  # Trainable parameter (n x 1)
+    
+        Initial_lr = 100*n
+    
+        optimizer = torch.optim.SGD([A], lr=Initial_lr)
+    
+        Cov_prev = float('inf')
+    
+        iter = 0
+        Cov = compute_f(A, X)
+        print(f"Initial guess for covaiance is: {Cov.item()}")
+    
+        # Train A to find the principal direction for this round
+        while True:
+            optimizer.zero_grad()  # Zero gradients
+        
+        
+            # Sample a random batch from X
+            indices = torch.randint(0, m, (batch_size,), device=device)  
+            X_batch = X[:, indices]  # Select batch
+        
+            # Compute the function value f(A) and its gradients
+            cov_batch = compute_f(A, X_batch)
+        
+            # Perform gradient ascent to maximize cov_batch
+            (-cov_batch).backward(retain_graph=True)  # Equivalent to maximizing cov_batch
+        
+            optimizer.step()  # Update A
+        
+        
+            # Check convergence
+            if iter % 100 == 0:
+                Cov = compute_f(A, X)
+                print(f"Round {round+1} - Iteration {iter} - Covariance: {Cov.item()}")
+            
+                # Check if convergence condition is met
+                if round == 0:
+                    if abs(Cov - Cov_prev) < Cov_prev * 1e-2:
+                        print(f"Convergence achieved at iteration {iter}. Stopping optimization.")
+                        break
+                else:
+                    if abs(Cov - Cov_prev) < Largest * 1e-2:
+                        print(f"Convergence achieved at iteration {iter}. Stopping optimization.")
+                        break
+                
+            
+                Cov_prev = Cov  # Update the previous covariance value
+        
+            iter += 1
+    
+        # Store the current principal direction A
+        A = A / torch.norm( A , p=2 )
+        A_list.append(A.clone().detach())
+    
+        # Remove the component of the data in the direction of A
+        X_proj = torch.matmul(A.T, X) * A  # Project the data onto A
+        del A
+        print(X_proj.shape)  # Should be (64*84*11, 5*2000)
+        X = X - X_proj  # Subtract projection from X to remove the direction
+        X = X.detach()
+    
+    
+        if round == 0:
+            Largest = Cov
+    
+    
+        if Cov<=Largest/100:
+            print(f"A sufficient amount of principal directions ( {round+1} unit vectors) is collected.")
+            break
+        
+    return A_list, X
+
+def compute_directions(X , device):
+
+    # Send the tensor X to GPU
+    X = X.to(device)
+
+    # Print the final shape
+    print(X.shape)  # Should be (64*84*11, 5*2000)
+
+
+    # Initialize the input data X and parameters A
+    n = X.shape[0]
+    m = X.shape[1]  # Number of data points
+
+    # Set hyperparameters
+
+    batch_size = 5  # Batch size for training
+
+    # Initialize Cov_prev with a very high value to start
+    Cov_prev = float('inf')
+
+
+    # Perform deflation
+    t0 = time()
+    A_list, X_updated = deflation(X, n, m, device, batch_size, Cov_prev)
+    Direction_training_time = time() - t0
+    # Print the final updated X and principal directions
+    print("Updated X shape:", X_updated.shape)
+    print("Principal directions found:")
+    for i, A in enumerate(A_list):
+        print(f"A{i+1}: {A}")
+        
+    return A_list , Direction_training_time
 
 Directions, Direction_Training_time = compute_directions(Y_dir, device)
 
@@ -340,7 +483,138 @@ dYV = Directions @ (Y - C)
 torch.cuda.empty_cache()
 
 
-from Training_ReLU import Trainer_ReLU
+# from Training_ReLU import Trainer_ReLU
+def estimate_lipschitz(x, y, num_samples=1000):
+    n = x.shape[0]
+    print(n)
+    slopes = []
+
+    for _ in range(num_samples):
+        i, j = random.sample(range(n), 2)
+        diff_x = x[i] - x[j]
+        diff_y = y[i] - y[j]
+
+        norm_x = torch.norm(diff_x)
+        norm_y = torch.norm(diff_y)
+
+        if norm_x > 1e-8:  # avoid division by near-zero
+            slope = norm_y / norm_x
+            slopes.append(slope.item())
+
+    return max(slopes)
+
+
+def Trainer_ReLU(x , y , device, epochs, save_path):
+    
+    x = x.T.to(device)
+    y = y.T.to(device)
+    
+    # Estimate λ before training
+    lam = max( 10.0 , 5*estimate_lipschitz(x, y) )
+    print(f"Estimated Lipschitz constant (empirical): {lam:.4f}")
+
+
+    # Compute mean and std for normalization
+    y_mean = y.mean(dim=0, keepdim=True)  # Shape [1, 10]
+    y_std = y.std(dim=0, keepdim=True) + 1e-8  # Avoid division by zero
+
+    # Normalize y
+    y_norm = (y - y_mean) / y_std  # Shape [10000, 10]
+
+    print(f"Using device: {device}")
+
+    # Create DataLoader for mini-batch training
+    batch_size = 20
+    dataset = TensorDataset(x, y_norm)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    # Define Neural Network Model with Two Hidden Layers
+    class ReLUNetwork(nn.Module):
+        def __init__(self, input_dim, hidden_dim1, hidden_dim2, output_dim):
+            super(ReLUNetwork, self).__init__()
+            self.hidden1 = nn.Linear(input_dim, hidden_dim1)
+            self.relu = nn.ReLU()
+            self.hidden2 = nn.Linear(hidden_dim1, hidden_dim2)
+            self.output = nn.Linear(hidden_dim2, output_dim)
+
+        def forward(self, x):
+            x = self.hidden1(x)
+            x = self.relu(x)
+            x = self.hidden2(x)
+            x = self.relu(x)
+            x = self.output(x)
+            return x
+
+    # Define Model and move to GPU
+    input_dim   = x.shape[1]
+    hidden_dim1 = input_dim
+    output_dim  = y.shape[1]
+    hidden_dim2 = output_dim
+    model = ReLUNetwork(input_dim, hidden_dim1, hidden_dim2, output_dim).to(device)
+
+    # Define Loss and Optimizer
+    criterion = nn.MSELoss(reduction='sum')
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+
+    # Training Loop
+    t0 = time()
+    for epoch in range(epochs):
+        total_loss = 0
+        for x_batch, y_batch in dataloader:
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+
+            optimizer.zero_grad()
+            y_pred = model(x_batch)
+            loss = criterion(y_pred, y_batch)
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+
+        if epoch % 10 == 0:
+            print(f'Epoch [{epoch}/{epochs}], Loss: {total_loss / len(dataloader):.4f}')
+        
+        
+        if (epoch % 10 == 0)  and (epoch > epochs// 25):
+            # === Enforce Lipschitz constraint per layer ===
+            with torch.no_grad():
+                for layer in [model.hidden1, model.hidden2, model.output]:
+                    weight = layer.weight.data
+                    norm = torch.linalg.norm(weight, ord=2)
+                    scale = max(1.0, norm.item() / lam)
+                    print(f'The scale is calculated as [{scale}]')
+                    layer.weight.data = weight / scale
+
+    # Extract trained parameters for Two hidden layer model
+    W1 = model.hidden1.weight.detach().cpu().numpy()
+    b1 = model.hidden1.bias.detach().cpu().numpy()
+    W2 = model.hidden2.weight.detach().cpu().numpy()
+    b2 = model.hidden2.bias.detach().cpu().numpy()
+    W3 = model.output.weight.detach().cpu().numpy()
+    b3 = model.output.bias.detach().cpu().numpy()
+
+    # Reshape y_std to [10, 1] for correct broadcasting
+    y_std_np = y_std.cpu().numpy().reshape(-1, 1)
+
+    # Denormalize final layer (W3, b3)
+    W3_denorm = (y_std_np * W3)
+    b3_denorm = (y_std.cpu().numpy() * b3) + y_mean.cpu().numpy()
+
+    # Save to MATLAB format
+    scipy.io.savemat(save_path, {
+        'W1': W1, 'b1': b1, 'W2': W2, 'b2': b2, 'W3': W3_denorm, 'b3': b3_denorm
+    })
+
+    print(f"Trained parameters saved to {save_path}")
+    
+    model.output.weight.data = torch.tensor(W3_denorm).to(device)
+    model.output.bias.data = torch.tensor(b3_denorm).to(device)
+    
+    train_time = time() - t0
+    
+    return model , train_time
+
 
 current_dir = os.getcwd()
 save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
@@ -438,29 +712,29 @@ del conf, c, directions
 eng = matlab.engine.start_matlab()
 
 # TODO: can I do string interpolation here?
-matlab_code = r"""
+matlab_code = fr"""
 
 clear
 clc
 
 load('python_data.mat')
 load('trained_relu_weights_2h_norm.mat')
-Small_net.weights = {double(W1) , double(W2), double(W3)};
-Small_net.biases = {double(b1)' , double(b2)', double(b3)'};
+Small_net.weights = {{double(W1) , double(W2), double(W3)}};
+Small_net.biases = {{double(b1)' , double(b2)', double(b3)'}};
 
 l1 = size(W1,1);
 l2 = size(W2,1);
 l0 = size(W1,2);
 
 L = cell(l1,1);
-L(:) = {'poslin'};
-Small_net.layers{1} = L ;
+L(:) = {{'poslin'}};
+Small_net.layers{{1}} = L ;
 L = cell(l2,1);
-L(:) = {'poslin'};
-Small_net.layers{2} = L ;
+L(:) = {{'poslin'}};
+Small_net.layers{{2}} = L ;
 
-dim2 = 720*960*12
-dimp = 720*960
+dim2 = {height}*{width}*{num_classes}
+dimp = {height}*{width}
 
 tic
 H.V = [sparse(dim2,1) speye(dim2)];
@@ -473,7 +747,9 @@ H.nVar= dim2;
 %%%%%%%%%%%%%%%
 conformal_time2 = toc;
 
-addpath(genpath('C:\\Users\\navid\\Documents\\MATLAB\\MATLAB_prev\\others\\Files\\CDC2023\\Large_DNN\\src'))
+% addpath(genpath('C:\\Users\\navid\\Documents\\MATLAB\\MATLAB_prev\\others\\Files\\CDC2023\\Large_DNN\\src'))
+addpath(genpath('~/13-ConformalInference/SSN_Reach/src'))
+addpath(genpath('~/13-ConformalInference/nnv'))
 
 tic
 %%%%%%%%%%%%%%
@@ -506,8 +782,8 @@ Lb = P_Center + 0.5*(P_V + abs(P_V))*P_lb + 0.5*(P_V - abs(P_V))*P_ub;
 Ub = P_Center + 0.5*(P_V + abs(P_V))*P_ub + 0.5*(P_V - abs(P_V))*P_lb;
 
 
-Lb_pixels = reshape(Lb , [dimp, 12]);
-Ub_pixels = reshape(Ub , [dimp, 12]);
+Lb_pixels = reshape(Lb , [dimp, {num_classes}]);
+Ub_pixels = reshape(Ub , [dimp, {num_classes}]);
 %%%%%%%%%%%%%%
 projection_time = toc;
 
@@ -549,17 +825,38 @@ for t in range(height * width):
 
 
 img = Image.open(image_path).convert('RGB')
-img_np = np.array(img).astype(np.float32) / 255.0  # shape: (H, W, 3), range [0, 1]
+img_tensor = processor(images=img, return_tensors="pt")["pixel_values"]
 
-img_norm = (img_np - mean_vals) / std_vals
+with torch.no_grad():
+    if model_name == "hrnet":
+        output = model(img_tensor)  # [B, C, H, W]
+        predicted_classes = F.interpolate(output, size=(1024, 2048), mode='bilinear', align_corners=True)
+        predicted_classes = torch.argmax(predicted_classes, dim=1).squeeze(0)  # shape: (512, 1024)
 
-img_tensor = img_norm.permute(2, 0, 1).unsqueeze(0).float()
-output = model(img_tensor)  # Assuming the model is already loaded
+    elif model_name == "segformer":
+        output = model(img_tensor)  # This will now be [1, 3, 1024, 1024]
+        logits = outputs.logits  # shape: [1, 19, 128, 128]
 
-True_class = {}
-for i in range(height):
-    for j in range(width):
-        _, True_class[(i, j)] = torch.max(output[0, :, i, j], 0)  # Assuming output shape is [1, C, H, W]
+        # Upsample to 1024x1024
+        logits = F.interpolate(logits, size=(1024, 1024), mode='bilinear', align_corners=False)
+        predicted_classes = torch.argmax(logits, dim=1).squeeze().cpu().numpy()  # shape: [1024, 1024]
+
+    else: # model_name == "mask2former"
+        output = model(img_tensor) # this might break...
+        predicted_classes = processor.post_process_semantic_segmentation(outputs, target_sizes=[(1024, 1024)])[0]
+        predicted_classes = predicted_classes.cpu().numpy()
+
+# True_class = {}
+# for i in range(height):
+#     for j in range(width):
+#         _, True_class[(i, j)] = torch.max(output[0, :, i, j], 0)  # Assuming output shape is [1, C, H, W]
+
+True_class = {
+    (i, j): int(predicted_classes[i, j])
+    for i in range(height)
+    for j in range(width)
+}
+
 
 # Initialize counters
 robust = 0
