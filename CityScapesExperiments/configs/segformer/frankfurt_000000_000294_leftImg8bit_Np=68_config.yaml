@@ -5,7 +5,7 @@ height: 1024
 width: 1024
 model_name: "segformer"
 num_classes: 19
-N_perturbed: 34 # 68, 102
+N_perturbed: 68 #, 102
 Ns: 8000
 # Ns: 40
 rank: 7999

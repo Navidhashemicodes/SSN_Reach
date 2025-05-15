@@ -1,11 +1,11 @@
-image_name: "frankfurt_000000_000294_leftImg8bit.png"
+image_name: "frankfurt_000000_001751_leftImg8bit.png"
 image_parent_dir: "frankfurt"
-label_name: "frankfurt_000000_000294_gtFine_labelIds.png"
+label_name: "frankfurt_000000_001751_gtFine_labelIds.png"
 height: 1024
 width: 1024
 model_name: "segformer"
 num_classes: 19
-N_perturbed: 34 # 68, 102
+N_perturbed: 68 # 68, 102
 Ns: 8000
 # Ns: 40
 rank: 7999

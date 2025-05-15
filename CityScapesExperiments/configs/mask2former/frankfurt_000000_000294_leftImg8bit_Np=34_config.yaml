@@ -3,7 +3,7 @@ image_parent_dir: "frankfurt"
 label_name: "frankfurt_000000_000294_gtFine_labelIds.png"
 height: 1024
 width: 1024
-model_name: "segformer"
+model_name: "mask2former"
 num_classes: 19
 N_perturbed: 34 # 68, 102
 Ns: 8000

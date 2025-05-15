@@ -78,8 +78,19 @@ def batched_inference(inputs, model, batch_size, device='cuda'):
                 
             else: # model_name == "mask2former"
                 outputs = model(batch) # this might break...
-                predicted_classes = processor.post_process_semantic_segmentation(outputs, target_sizes=[(1024, 1024)])[0]
-                predicted_classes = predicted_classes.cpu().numpy()
+                
+                # compute logits from output
+                # class_logits = outputs.class_queries_logits[0]  # [num_queries, num_classes+1]
+                # mask_logits = outputs.masks_queries_logits[0]
+                class_logits = outputs.class_queries_logits
+                class_logits = class_logits[:, :, :-1]  
+                mask_logits = outputs.masks_queries_logits
+                outputs = torch.einsum("bqc,bqhw->bchw", class_logits.softmax(-1), mask_logits.sigmoid())
+                outputs = F.interpolate(
+                    outputs, size=(H, W), mode='bilinear', align_corners=False
+                )
+
+                predicted_classes = outputs.cpu().numpy()
                 # gt = label.squeeze(0).numpy()  # ground truth (H, W)
 
             results.append(outputs.cpu())
@@ -206,7 +217,24 @@ label_transform = T.Lambda(lambda img: torch.from_numpy(np.array(img)).long())
 
 img = Image.open(image_path).convert('RGB')
 # img = resize_transform(img) # resized to 1024x1024
-img_np = np.array(img).astype(np.float32) / 255.0  # shape: (H, W, 3), range [0, 1]
+if model_name == "segformer":
+    img_np = np.array(img).astype(np.float32) / 255.0  # shape: (H, W, 3), range [0, 1]
+elif model_name == "mask2former":
+    img = processor(images=img, return_tensors="pt", size=(1024, 1024), do_resize=True)['pixel_values']
+    
+    # unnormalize
+    mean_vals = [0.485, 0.456, 0.406]
+    std_vals  = [0.229, 0.224, 0.225]
+    mean = torch.tensor(mean_vals).view(-1, 1, 1)
+    std = torch.tensor(std_vals).view(-1, 1, 1)
+    unnormalized_img = img * std + mean
+
+    # reshape to (H, W, 3)
+    unnormalized_img = unnormalized_img.squeeze(0).permute(1, 2, 0)
+
+    # now we just have the resized image; convert to numpy
+    img_np = np.array(unnormalized_img).astype(np.float32) / 255.0
+
 at_im = img_np.copy()
 
 label = Image.open(label_path)
@@ -243,7 +271,7 @@ std_vals = np.array([0.229, 0.224, 0.225])
 
 at_im_uint8 = (at_im * 255).astype(np.uint8)
 at_pil = Image.fromarray(at_im_uint8)
-at_im_tensor = processor(images=at_pil, return_tensors="pt")["pixel_values"].to(device)
+at_im_tensor = processor(images=at_pil, return_tensors="pt", size=(1024, 1024), do_resize=True)["pixel_values"].to(device)
 
 # --- Run the model ---
 # with torch.no_grad():
@@ -293,8 +321,6 @@ def generate_data_chunk(N, indices, de, Inputs, batched_infer):
 
 
 t0 = time()
-
-
 
 Inputs = Input.repeat(Nt,1,1,1)
 Y, X = generate_data_chunk(Nt, indices, de, Inputs, batched_inference)
@@ -888,6 +914,6 @@ for key, val in save_dict.items():
     elif isinstance(val, dict):
         save_dict[key] = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in val.items()}
         
-save_name = f"CI_result_middle_guarantee_ReLU_relaxed_eps_{delta_rgb}_Npertubed_{N_perturbed}.pt"
+save_name = f"{image_name}_{model_name}_CI_result_middle_guarantee_ReLU_relaxed_eps_{delta_rgb}_Npertubed_{N_perturbed}.pt"
     
 torch.save(save_dict, save_name)
