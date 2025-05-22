@@ -7,7 +7,6 @@ __pycache__/
 *.jpg
 *.mat
 *.eps
-*.png
 *.fig
 *.pt
 formulas/__pycache__/*
