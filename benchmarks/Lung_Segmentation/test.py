@@ -9,14 +9,8 @@ import torch
 import numpy as np
 import onnxruntime as ort
 import cv2
-from time import time
 import os
 import sys
-from tqdm import tqdm
-from scipy.stats import beta
-from torch.cuda.amp import autocast
-import matlab.engine
-import scipy.io
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
@@ -25,6 +19,22 @@ reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
 
 from Reach4SSN import ReachabilityAnalyzer
+
+# The following hyperparameters can be adjusted to fit the verification process
+# within the limits of your GPU memory. The current values are intentionally kept
+# small for compatibility with GPUs with limited memory.
+
+# Ns: Number of calibration samples. Increasing Ns can improve the level of formal guarantees.
+
+# Nsp: Number of calibration samples processed per iteration on the GPU. Adjust this value
+# to ensure that the per-iteration data fits in memory. Higher values reduce runtime,
+# but increase GPU memory requirements.
+
+# Nt: Number of training samples to be loaded onto the GPU in full. A larger Nt typically
+# leads to tighter (less conservative) bounds, but requires more memory. On GPUs with
+# limited memory, you may need to reduce Nt, accepting slightly more conservative results.
+
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 start_loc = (0, 0)

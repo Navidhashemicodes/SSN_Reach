@@ -127,20 +127,35 @@ def M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
 
 if __name__ == '__main__':
     
+    
+    # The following hyperparameters can be adjusted to fit the verification process
+    # within the limits of your GPU memory. The current values are according to experiments
+    # in the submission
+
+    # Ns: Number of calibration samples. Increasing Ns can improve the level of formal guarantees.
+
+    # Nsp: Number of calibration samples processed per iteration on the GPU. Adjust this value
+    # to ensure that the per-iteration data fits in memory. Higher values reduce runtime,
+    # but increase GPU memory requirements.
+
+    # Nt: Number of training samples to be loaded onto the GPU in full. A larger Nt typically
+    # leads to tighter (less conservative) bounds, but requires more memory. On GPUs with
+    # limited memory, you may need to reduce Nt, accepting slightly more conservative results.
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     start_loc = (0, 0)
-    Ns = 10
-    Nsp = 2
-    rank = 7
-    guarantee = 0.999
+    Ns = 100000
+    Nsp = 10000
+    rank = 99999
+    guarantee = 0.9999
     delta_rgb = 3
     de = delta_rgb
-    Nt = 10
-    N_dir = 6
+    Nt = 10000
+    N_dir = 5000
     threshold_normal = 1e-5
-    sim_batch = 2
-    trn_batch = 5
-    epochs = 50
+    sim_batch = 1000
+    trn_batch = 1000
+    epochs = 90
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
 

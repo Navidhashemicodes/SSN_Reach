@@ -131,20 +131,34 @@ def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
 
 if __name__ == '__main__':
     
+    # The following hyperparameters can be adjusted to fit the verification process
+    # within the limits of your GPU memory. The current values are according to experiments
+    # in the submission
+
+    # Ns: Number of calibration samples. Increasing Ns can improve the level of formal guarantees.
+
+    # Nsp: Number of calibration samples processed per iteration on the GPU. Adjust this value
+    # to ensure that the per-iteration data fits in memory. Higher values reduce runtime,
+    # but increase GPU memory requirements.
+
+    # Nt: Number of training samples to be loaded onto the GPU in full. A larger Nt typically
+    # leads to tighter (less conservative) bounds, but requires more memory. On GPUs with
+    # limited memory, you may need to reduce Nt, accepting slightly more conservative results.
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     start_loc = (0, 0)
-    Ns = 10
-    Nsp = 2
-    rank = 7
+    Ns = 8000
+    Nsp = 25
+    rank = 7999
     guarantee = 0.999
     delta_rgb = 3
     de = delta_rgb / 255.0
-    Nt = 10
-    N_dir = 6
+    Nt = 2100
+    N_dir = 150
     threshold_normal = 1e-5
-    sim_batch = 2
-    trn_batch = 5
-    epochs = 50
+    sim_batch = 5
+    trn_batch = 10
+    epochs = 90
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
 
