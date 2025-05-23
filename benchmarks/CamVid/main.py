@@ -18,7 +18,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 root_dir = pathlib.Path(__file__).resolve().parents[2]
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
-from Reach4SSN import ReachabilityAnalyzer
+from Reach4SSN3 import ReachabilityAnalyzer
 
 
 def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
