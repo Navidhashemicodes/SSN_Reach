@@ -99,7 +99,7 @@ def Trainer_ReLU(x , y , device, epochs, save_path):
             print(f'Epoch [{epoch}/{epochs}], Loss: {total_loss / len(dataloader):.4f}')
         
         
-        if (epoch % 10 == 0)  and (epoch > epochs// 25):
+        if (epoch % 10 == 0)  and (epoch > 0.7*epochs):
             # === Enforce Lipschitz constraint per layer ===
             with torch.no_grad():
                 for layer in [model.hidden1, model.hidden2, model.output]:

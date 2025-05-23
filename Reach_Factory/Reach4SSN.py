@@ -113,7 +113,86 @@ class ReachabilityAnalyzer:
         return Y, X, runtime
     
     
-    def CI_ReLU_surrogate(self, small_net, C, res_max, Directions):
+    def Shape_residual(self):
+        
+        Nt = self.params['Nt']
+        N_dir = self.params['N_dir']
+        Y_dir, X_dir, train_data_run_1_1 = self.generate_data(N_dir, 0)
+        Directions, Direction_Training_time = compute_directions(Y_dir, self.device, self.params['trn_batch'])
+        Directions = torch.stack([d.squeeze(-1) for d in Directions])
+        thelen = min(Nt, N_dir)
+        if Nt > thelen:
+            chunck_size = thelen
+            Num_chunks = Nt // chunck_size
+            remainder = Nt % chunck_size
+        else:
+            chunck_size = Nt
+            Num_chunks = 1
+            remainder = 0
+
+        chunk_sizes = [chunck_size] * Num_chunks
+        if remainder != 0:
+            chunk_sizes.append(remainder)
+
+        train_data_run_1_1_l = []
+        train_data_run_1_1_l.append(train_data_run_1_1)
+        
+        C_l = []
+        YV_l = []
+        X_l =[]
+        for nc, curr_len in enumerate(chunk_sizes):
+            Y, X, tYX = self.generate_data(curr_len, nc+1)
+            X_l.append(X)
+            train_data_run_1_1_l.append( tYX )
+            C =  20 * (0.001 * Y.mean(dim=0) + (0.05 - 0.001) * 0.5 * (Y.min(dim=0).values + Y.max(dim=0).values))
+            C_l.append(C)
+            YV_l.append(Y @ Directions.T)
+        stackedC = torch.stack(C_l, dim=0)
+        C = stackedC.mean(dim=0)
+        CV = C @ Directions.T
+        YV = torch.cat(YV_l , dim=0)
+        dYV = YV - CV.unsqueeze(0)
+        X = torch.cat(X_l , dim=0)
+        train_data_run_1_1 = sum(train_data_run_1_1_l)
+        del Y, YV, CV, X_l, C_l, YV_l
+        
+        
+        current_dir = os.getcwd()
+        save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
+        small_net, Model_training_time = Trainer_ReLU(X, dYV, self.device, self.params['epochs'], save_path)
+            
+        
+        train_data_run_1_2_l = []
+        trn_time1_l = []
+        res_max_l = []
+        seed_loc = nc+1       
+        for nc, curr_len in enumerate(chunk_sizes):
+            Y, X, tYX = self.generate_data(curr_len, seed_loc+nc+1)
+            train_data_run_1_2_l.append( tYX )
+            t0 = time()
+            with torch.no_grad():
+                pred = small_net(X) 
+                approx_Y = pred @ Directions  + C.unsqueeze(0)  # shape: same as Y
+
+            residuals = (Y - approx_Y).abs()
+            res_max_l.append( residuals.max(dim=0).values)
+            trn_time1_l.append( time() - t0)
+            del Y, approx_Y, pred, residuals
+        seed_loc = seed_loc+nc+1
+        t0 = time()
+        stacked_max = torch.stack(res_max_l, dim=0)
+        res_max = stacked_max.max(dim=0).values
+        tn = self.params['threshold_normal']
+        res_max[res_max < tn ] = tn
+        trn_time1_l.append( time()-t0 )
+        trn_time1 = sum(trn_time1_l)
+        train_data_run_1_2 = sum(train_data_run_1_2_l )
+        train_data_run_1 = train_data_run_1_1 + train_data_run_1_2
+        
+        return res_max, C, Directions, small_net, trn_time1, train_data_run_1, Direction_Training_time, Model_training_time, seed_loc
+
+    
+    def CI_ReLU_surrogate(self, small_net, C, res_max, Directions, seed_loc):
         
         Ns = self.params['Ns']
         Nsp = self.params['Nsp']        
@@ -144,7 +223,7 @@ class ReachabilityAnalyzer:
 
         for nc, curr_len in enumerate(chunk_sizes):
             
-            Y_test, X_test_nc, tst_run = self.generate_data(curr_len, nc+1)
+            Y_test, X_test_nc, tst_run = self.generate_data(curr_len, seed_loc+nc+1)
             test_data_run.append( tst_run )
             
             t1 = time()
@@ -262,55 +341,12 @@ class ReachabilityAnalyzer:
     
     def Verify_with_ReLU_surrogate(self):
         
-        Nt = self.params['Nt']
-        N_dir = self.params['N_dir']
-       
         
-        assert N_dir <= Nt, "Requested more samples than available!"
-
-        selected_indices = torch.randperm(Nt)[:N_dir]
-        
-        Y, X, train_data_run_1 = self.generate_data(Nt, 0)
-        
-        X_dir = X[selected_indices, ...].to(self.device)
-        Y_dir = Y[selected_indices, ...].to(self.device)
-        
+        res_max, C, Directions, small_net, trn_time1, train_data_run_1, Direction_Training_time, Model_training_time, seed_loc = self.Shape_residual()
         
 
-        Directions, Direction_Training_time = compute_directions(Y_dir, self.device, self.params['trn_batch'])
-
-        Directions = torch.stack([d.squeeze(-1) for d in Directions])
-
-
-        C = 20 * (0.001 * Y.mean(dim=0) + (0.05 - 0.001) * 0.5 * (Y.min(dim=0).values + Y.max(dim=0).values))
-        dY = Y - C.unsqueeze(0)
-        dYV = dY @ Directions.T
-
-        torch.cuda.empty_cache()
-
-
         
-        current_dir = os.getcwd()
-        save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
-        small_net, Model_training_time = Trainer_ReLU(X, dYV, self.device, self.params['epochs'], save_path)
-            
-        with torch.no_grad():
-            pred = small_net(X) 
-
-            approx_Y = pred @ Directions  + C.unsqueeze(0)  # shape: same as Y
-
-        t0 = time()
-        residuals = (Y - approx_Y).abs()
-        res_max = residuals.max(dim=0).values
-        tn = self.params['threshold_normal']
-        res_max[res_max < tn ] = tn
-        
-        del Y, approx_Y, pred
-        
-        trn_time1 = time()-t0
-
-        
-        Conf, R_star, conformal_time, res_test_time, test_data_run = self.CI_ReLU_surrogate(small_net, C, res_max, Directions)
+        Conf, R_star, conformal_time, res_test_time, test_data_run = self.CI_ReLU_surrogate(small_net, C, res_max, Directions, seed_loc)
 
 
         current_dir = os.getcwd()
