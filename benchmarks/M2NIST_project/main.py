@@ -23,7 +23,7 @@ from Reach4SSN import ReachabilityAnalyzer
 
 def M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
                   Ns, Nsp, rank, guarantee, device,  threshold_normal,
-                  sim_batch, trn_batch, epochs, surrogate_mode, src_dir):
+                  sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir):
         
     model_name = 'm2nist_dilated_72iou_24layer.onnx'
     image_name = 'm2nist_6484_test_images.mat'
@@ -110,6 +110,7 @@ def M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
         mode = surrogate_mode,
         class_threshold = 0,
         src_dir = src_dir,
+        nnv_dir = nnv_dir,
         params=params
     )
     analyzer.Mask_titles()
@@ -158,6 +159,13 @@ if __name__ == '__main__':
     epochs = 90
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
+    nnv_dir = 'C:\\Users\\navid\\Documents\\nnv'
+    
+    if not os.path.isdir(nnv_dir):
+        sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
+                 f"Please check the path and ensure NNV is properly installed.")
+
+    print(f"✅ NNV directory found at: {nnv_dir}")
 
 
     # image_number_list = [ 0 ,1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
@@ -176,4 +184,4 @@ if __name__ == '__main__':
             ii = ii+1
             M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
                           Ns, Nsp, rank, guarantee, device,  threshold_normal,
-                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir)
+                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir)

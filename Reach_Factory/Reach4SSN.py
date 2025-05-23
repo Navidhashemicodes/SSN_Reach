@@ -29,7 +29,7 @@ from Training_Linear import Trainer_Linear
 class ReachabilityAnalyzer:
     
     
-    def __init__(self, True_class, class_threshold, model, image_name, LB, de, indices, original_dim, output_dim, device, mode, src_dir, params):
+    def __init__(self, True_class, class_threshold, model, image_name, LB, de, indices, original_dim, output_dim, device, mode, src_dir, nnv_dir, params):
         
         self.True_class = True_class
         self.class_threshold = class_threshold
@@ -43,6 +43,7 @@ class ReachabilityAnalyzer:
         self.mode = mode
         self.image_name = image_name
         self.src_dir = src_dir
+        self.nnv_dir = nnv_dir
         self.params = params
         
         
@@ -210,6 +211,7 @@ class ReachabilityAnalyzer:
         
        
         addpath(genpath(dir))
+        addpath(genpath(nnv_dir))
 
         tic
         %%%%%%%%%%%%%%
@@ -318,7 +320,8 @@ class ReachabilityAnalyzer:
         directions = Directions.cpu().numpy()
 
         scipy.io.savemat(save_path, {
-            'Conf': conf, 'C': c, 'Directions': directions, 'dir': self.src_dir, 'dimp': self.original_dim[1]*self.original_dim[2]} )
+            'Conf': conf, 'C': c, 'Directions': directions, 'dir': self.src_dir,
+            'dimp': self.original_dim[1]*self.original_dim[2], 'nnv_dir': self.nnv_dir} )
 
         del conf, c, directions
     
@@ -533,6 +536,14 @@ if __name__ == '__main__':
     model_path = os.path.join(repo_root, 'benchmarks', 'Lung_Segmentation', 'models', model_name)
     image_path = os.path.join(repo_root, 'benchmarks', 'Lung_Segmentation', 'images', image_name)
     src_dir =  os.path.join(repo_root, 'src')
+    nnv_dir = 'C:\\Users\\navid\\Documents\\nnv'
+    
+    if not os.path.isdir(nnv_dir):
+        sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
+                 f"Please check the path and ensure NNV is properly installed.")
+
+    print(f"✅ NNV directory found at: {nnv_dir}")
+    
 
     ort_session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])
 
@@ -603,6 +614,7 @@ if __name__ == '__main__':
         mode = surrogate_mode,
         class_threshold = 0,
         src_dir = src_dir,
+        nnv_dir = nnv_dir,
         params=params
     )
     analyzer.Mask_titles()
