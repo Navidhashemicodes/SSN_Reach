@@ -147,6 +147,8 @@ class ReachabilityAnalyzer:
             C =  20 * (0.001 * Y.mean(dim=0) + (0.05 - 0.001) * 0.5 * (Y.min(dim=0).values + Y.max(dim=0).values))
             C_l.append(C)
             YV_l.append(Y @ Directions.T)
+            torch.cuda.empty_cache()
+            
         stackedC = torch.stack(C_l, dim=0)
         C = stackedC.mean(dim=0)
         CV = C @ Directions.T
@@ -155,6 +157,7 @@ class ReachabilityAnalyzer:
         X = torch.cat(X_l , dim=0)
         train_data_run_1_1 = sum(train_data_run_1_1_l)
         del Y, YV, CV, X_l, C_l, YV_l
+        torch.cuda.empty_cache()
         
         
         current_dir = os.getcwd()
@@ -178,6 +181,8 @@ class ReachabilityAnalyzer:
             res_max_l.append( residuals.max(dim=0).values)
             trn_time1_l.append( time() - t0)
             del Y, approx_Y, pred, residuals
+            torch.cuda.empty_cache()
+            
         seed_loc = seed_loc+nc+1
         t0 = time()
         stacked_max = torch.stack(res_max_l, dim=0)
@@ -233,6 +238,7 @@ class ReachabilityAnalyzer:
             res_test_time.append(time() - t1)
             
             del Y_test,  X_test_nc, res_tst
+            torch.cuda.empty_cache()
             ind += curr_len
         
         t0 = time()
@@ -342,12 +348,11 @@ class ReachabilityAnalyzer:
     def Verify_with_ReLU_surrogate(self):
         
         
-        res_max, C, Directions, small_net, trn_time1, train_data_run_1, Direction_Training_time, Model_training_time, seed_loc = self.Shape_residual()
-        
-
+        res_max, C, Directions, small_net, trn_time1, train_data_run_1, Direction_Training_time, Model_training_time, seed_loc = self.Shape_residual()        
+        torch.cuda.empty_cache()
         
         Conf, R_star, conformal_time, res_test_time, test_data_run = self.CI_ReLU_surrogate(small_net, C, res_max, Directions, seed_loc)
-
+        torch.cuda.empty_cache()
 
         current_dir = os.getcwd()
         save_path = os.path.join(current_dir, 'python_data.mat')
