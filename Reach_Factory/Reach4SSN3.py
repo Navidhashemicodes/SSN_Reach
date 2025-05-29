@@ -253,7 +253,7 @@ class ReachabilityAnalyzer:
 
         with torch.no_grad():
             Rs_sorted = torch.sort(Rs).values
-            R_star = Rs_sorted[ell]  # Assuming `ell` is defined
+            R_star = Rs_sorted[ell-1]  # Assuming `ell` is defined
             Conf = R_star * res_max
 
         conformal_time = time() - t0

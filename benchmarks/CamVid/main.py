@@ -18,7 +18,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 root_dir = pathlib.Path(__file__).resolve().parents[2]
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
-from Reach4SSN3 import ReachabilityAnalyzer
+from Reach4SSN import ReachabilityAnalyzer
 
 
 def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
@@ -121,8 +121,16 @@ def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
 
     remove_path =  os.path.join(current_dir, 'Matlab_data.mat')
     os.remove(remove_path)
-    remove_path =  os.path.join(current_dir, 'python_data.mat')
-    os.remove(remove_path)
+    
+    
+    path1 = os.path.join(current_dir, 'python_data.mat')
+    path2 = os.path.join(current_dir, 'python_data.npz')
+    if os.path.exists(path1):
+        os.remove(path1)
+    elif os.path.exists(path2):
+        os.remove(path2)
+    
+    
     if surrogate_mode == 'ReLU':
         remove_path =  os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
         os.remove(remove_path)
@@ -149,7 +157,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     start_loc = (0, 0)
     Ns = 8000
-    Nsp = 25
+    Nsp =  150
     rank = 7999
     guarantee = 0.999
     delta_rgb = 3
@@ -159,10 +167,10 @@ if __name__ == '__main__':
     threshold_normal = 1e-5
     sim_batch = 5
     trn_batch = 10
-    epochs = 90
+    epochs = 200
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
-    nnv_dir = 'C:\\Users\\navid\\Documents\\nnv'
+    nnv_dir = '/home/hashemn/nnv'
     
     if not os.path.isdir(nnv_dir):
         sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
@@ -183,6 +191,7 @@ if __name__ == '__main__':
         'Seq05VD_f02070.png',
         'Seq05VD_f03540.png'
         ]
+    image_names = ['Seq05VD_f03540.png']
 
     N_perturbed_list = [17, 34, 51, 68, 85, 102]
     

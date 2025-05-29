@@ -17,7 +17,6 @@ from scipy.stats import beta
 import matlab.engine
 import scipy.io
 import pathlib
-import gc
 
 root_dir = pathlib.Path(__file__).resolve().parents[1]
 training_factory_path = os.path.join(root_dir, 'Training_Factory')
@@ -65,7 +64,7 @@ class ReachabilityAnalyzer:
     
     def Func(self, x):
         batch_size = self.params['sim_batch']
-        x = x.to(torch.float16)  # Use half precision
+        # x = x.to(torch.float16)  # Use half precision
         x_numpy = x.cpu().numpy().astype(np.float32)
         results = []
         for i in range(0, x_numpy.shape[0], batch_size):
@@ -114,112 +113,10 @@ class ReachabilityAnalyzer:
         return Y, X, runtime
     
     
-    def Shape_residual(self):
-        
-        Nt = self.params['Nt']
-        N_dir = self.params['N_dir']
-        Y_dir, X_dir, train_data_run_1_1 = self.generate_data(N_dir, 0)
-        Directions, Direction_Training_time = compute_directions(Y_dir, self.device, self.params['trn_batch'])
-        Directions = torch.stack([d.squeeze(-1) for d in Directions])
-        
-
-        chunck_size = N_dir
-        Num_chunks = Nt // chunck_size
-        remainder = Nt % chunck_size
-
-        chunk_sizes = [chunck_size] * Num_chunks
-        if remainder != 0:
-            chunk_sizes.append(remainder)
-
-        train_data_run_1_l = []
-        train_data_run_1_l.append(train_data_run_1_1)
-        
-        C_l = []
-        YV_l = []
-        X_l =[]
-        Y_l = []
-        
-        X_dir = X_dir.cpu()
-        X_l.append(X_dir)
-        C =  20 * (0.001 * Y_dir.mean(dim=0) + (0.05 - 0.001) * 0.5 * (Y_dir.min(dim=0).values + Y_dir.max(dim=0).values))
-        C_l.append(C)
-        YV_l.append(Y_dir @ Directions.T)
-        Y_dir = Y_dir.cpu()
-        Y_l.append(Y_dir)
-        gc.collect()
-        torch.cuda.empty_cache()
-        for nc, curr_len in enumerate(chunk_sizes[1:], start=1):
-            Y_dir, X_dir, tYX = self.generate_data(curr_len, nc)
-            train_data_run_1_l.append(tYX)
-            X_dir = X_dir.cpu()
-            X_l.append(X_dir)
-            C =  20 * (0.001 * Y_dir.mean(dim=0) + (0.05 - 0.001) * 0.5 * (Y_dir.min(dim=0).values + Y_dir.max(dim=0).values))
-            C_l.append(C)
-            YV_l.append(Y_dir @ Directions.T)
-            Y_dir = Y_dir.cpu()
-            Y_l.append(Y_dir)
-            gc.collect()
-            torch.cuda.empty_cache()
-            
-            
-        stackedC = torch.stack(C_l, dim=0)
-        C = stackedC.mean(dim=0)
-        CV = C @ Directions.T
-        YV = torch.cat(YV_l , dim=0)
-        dYV = YV - CV.unsqueeze(0)
-        X = torch.cat(X_l , dim=0).to(self.device)
-        train_data_run_1 = sum(train_data_run_1_l)
-        del YV, CV, C_l, YV_l
-        gc.collect()
-        torch.cuda.empty_cache()
-        
-        
-        current_dir = os.getcwd()
-        save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
-        small_net, Model_training_time = Trainer_ReLU(X, dYV, self.device, self.params['epochs'], save_path)
-            
-        
-        trn_time1_l = []
-        res_max_l = []
-
-        for nc, curr_len in enumerate(chunk_sizes):
-            Y = Y_l[nc].to(self.device) 
-            X = X_l[nc].to(self.device)
-            
-            t0 = time()
-            with torch.no_grad():
-                pred = small_net(X) 
-                approx_Y = pred @ Directions  + C.unsqueeze(0)  # shape: same as Y
-
-            residuals = (Y - approx_Y).abs()
-            res_max_l.append( residuals.max(dim=0).values)
-            trn_time1_l.append( time() - t0)
-            del Y, approx_Y, pred, residuals
-            gc.collect()
-            torch.cuda.empty_cache()
-            
-        t0 = time()
-        stacked_max = torch.stack(res_max_l, dim=0)
-        res_max = stacked_max.max(dim=0).values
-        tn = self.params['threshold_normal']
-        res_max[res_max < tn ] = tn
-        trn_time1_l.append( time()-t0 )
-        trn_time1 = sum(trn_time1_l)
-        
-        return res_max, C, Directions, small_net, trn_time1, train_data_run_1, Direction_Training_time, Model_training_time
-
-    
     def CI_ReLU_surrogate(self, small_net, C, res_max, Directions):
         
         Ns = self.params['Ns']
-        Nsp = self.params['Nsp']
-        Nt = self.params['Nt']
-        N_dir = self.params['N_dir']
-        
-        if Nt % N_dir == 0:
-            seed_loc = Nt // N_dir
-        else:
-            seed_loc = 1 +  ( Nt // N_dir )
+        Nsp = self.params['Nsp']        
 
         ell = self.params['rank']
         
@@ -247,20 +144,17 @@ class ReachabilityAnalyzer:
 
         for nc, curr_len in enumerate(chunk_sizes):
             
-            Y_test, X_test_nc, tst_run = self.generate_data(curr_len, seed_loc+nc+1)
+            Y_test, X_test_nc, tst_run = self.generate_data(curr_len, nc+1)
             test_data_run.append( tst_run )
             
             t1 = time()
             with torch.no_grad():
-            	pred = small_net(X_test_nc) @ Directions  + C.unsqueeze(0)  # shape: (dim2, curr_len)
+                pred = small_net(X_test_nc) @ Directions  + C.unsqueeze(0)  # shape: (dim2, curr_len)
             res_tst = (Y_test - pred).abs()
-            vals = torch.max(res_tst / res_max.unsqueeze(0), dim=1).values
+            Rs[ind:ind + curr_len] = torch.max(res_tst / res_max.unsqueeze(0), dim=1).values
             res_test_time.append(time() - t1)
-            del Y_test, pred, res_tst
-            gc.collect()
-            torch.cuda.empty_cache()
-            Rs[ind:ind + curr_len] = vals 
-
+            
+            del Y_test,  X_test_nc, res_tst
             ind += curr_len
         
         t0 = time()
@@ -275,192 +169,93 @@ class ReachabilityAnalyzer:
         return Conf, R_star, conformal_time, res_test_time, test_data_run
     
     
-    def call_MATLAB_for_star(self, save_mode):
+    def call_MATLAB_for_star(self):
     
         eng = matlab.engine.start_matlab()
 
-        if save_mode == 1:
-            matlab_code = r"""
+
+        matlab_code = r"""
 
 
-            clear
-            clc
-            
-            load('python_data.mat')
-            load('trained_relu_weights_2h_norm.mat')
-            Small_net.weights = {double(W1) , double(W2), double(W3)};
-            Small_net.biases = {double(b1)' , double(b2)', double(b3)'};
-                                
-            l1 = size(W1,1);
-            l2 = size(W2,1);
-            l0 = size(W1,2);
-            
-            L = cell(l1,1);
-            L(:) = {'poslin'};
-            Small_net.layers{1} = L ;
-            L = cell(l2,1);
-            L(:) = {'poslin'};
-            Small_net.layers{2} = L ;
-            
-            dim2 = length(Conf);
-            
-            tic
-            H.V = [sparse(dim2,1) speye(dim2)];
-            H.C = sparse(1,dim2);
-            H.d = 0;
-            H.predicate_lb = -Conf.';
-            H.predicate_ub =  Conf.';
-            H.dim = dim2;
-            H.nVar= dim2;
-            %%%%%%%%%%%%%%%
-            conformal_time2 = toc;
+        clear
+        clc
+        
+        load('python_data.mat')
+        load('trained_relu_weights_2h_norm.mat')
+        Small_net.weights = {double(W1) , double(W2), double(W3)};
+        Small_net.biases = {double(b1)' , double(b2)', double(b3)'};
+                            
+        l1 = size(W1,1);
+        l2 = size(W2,1);
+        l0 = size(W1,2);
+
+        L = cell(l1,1);
+        L(:) = {'poslin'};
+        Small_net.layers{1} = L ;
+        L = cell(l2,1);
+        L(:) = {'poslin'};
+        Small_net.layers{2} = L ;
+
+        dim2 = length(Conf);
+
+        tic
+        H.V = [sparse(dim2,1) speye(dim2)];
+        H.C = sparse(1,dim2);
+        H.d = 0;
+        H.predicate_lb = -Conf.';
+        H.predicate_ub =  Conf.';
+        H.dim = dim2;
+        H.nVar= dim2;
+        %%%%%%%%%%%%%%%
+        conformal_time2 = toc;
        
         
        
-            addpath(genpath(dir))
-            addpath(genpath(nnv_dir))
+        addpath(genpath(dir))
+        addpath(genpath(nnv_dir))
 
-            tic
-            %%%%%%%%%%%%%%
-            I = Star();
-            I.V = [0.5*ones(l0,1)  eye(l0)];
-            I.C = zeros(1,l0);
-            I.d = 0;
-            I.predicate_lb = -0.5*ones(l0,1);
-            I.predicate_ub =  0.5*ones(l0,1);
-            I.dim =  l0;
-            I.nVar = l0;
-
-
-            Principal_reach = ReLUNN_Reachability_starinit(I, Small_net, 'approx-star');
-            Surrogate_reach = affineMap(Principal_reach , Directions.' , C.');
-
-            %%%%%%%%%%%%%%
-            reachability_time = toc;
-            clear Principal_reach
-
-            tic
-            %%%%%%%%%%%%%%
-            P_Center = sparse(double(Surrogate_reach.V(:,1)));
-            P_lb = double([Surrogate_reach.predicate_lb ; H.predicate_lb]);
-            P_ub = double([Surrogate_reach.predicate_ub ; H.predicate_ub]);
+        tic
+        %%%%%%%%%%%%%%
+        I = Star();
+        I.V = [0.5*ones(l0,1)  eye(l0)];
+        I.C = zeros(1,l0);
+        I.d = 0;
+        I.predicate_lb = -0.5*ones(l0,1);
+        I.predicate_ub =  0.5*ones(l0,1);
+        I.dim =  l0;
+        I.nVar = l0;
 
 
-            P_V = [double(Surrogate_reach.V(:,2:end))   double(H.V(:,2:end))];
-            Lb = P_Center + 0.5*(P_V + abs(P_V))*P_lb + 0.5*(P_V - abs(P_V))*P_ub;
-            Ub = P_Center + 0.5*(P_V + abs(P_V))*P_ub + 0.5*(P_V - abs(P_V))*P_lb;
+        Principal_reach = ReLUNN_Reachability_starinit(I, Small_net, 'approx-star');
+        Surrogate_reach = affineMap(Principal_reach , Directions.' , C.');
+
+        %%%%%%%%%%%%%%
+        reachability_time = toc;
+        clear Principal_reach
+
+        tic
+        %%%%%%%%%%%%%%
+        P_Center = sparse(double(Surrogate_reach.V(:,1)));
+        P_lb = double([Surrogate_reach.predicate_lb ; H.predicate_lb]);
+        P_ub = double([Surrogate_reach.predicate_ub ; H.predicate_ub]);
 
 
-            Lb_pixels = reshape(Lb , [dimp, dim2/dimp]);
-            Ub_pixels = reshape(Ub , [dimp, dim2/dimp]);
-            %%%%%%%%%%%%%%
-            projection_time = toc;
-
-            clear  Surrogate_reach
-
-            save("Matlab_data.mat", 'Lb_pixels', 'Ub_pixels', 'projection_time', 'reachability_time', 'conformal_time2')
-
-            """
-        elif save_mode ==2:
-            
-            matlab_code = r"""
+        P_V = [double(Surrogate_reach.V(:,2:end))   double(H.V(:,2:end))];
+        Lb = P_Center + 0.5*(P_V + abs(P_V))*P_lb + 0.5*(P_V - abs(P_V))*P_ub;
+        Ub = P_Center + 0.5*(P_V + abs(P_V))*P_ub + 0.5*(P_V - abs(P_V))*P_lb;
 
 
-            clear
-            clc
+        Lb_pixels = reshape(Lb , [dimp, dim2/dimp]);
+        Ub_pixels = reshape(Ub , [dimp, dim2/dimp]);
+        %%%%%%%%%%%%%%
+        projection_time = toc;
 
-            npz = py.numpy.load('python_data.npz');
-            shape = cellfun(@double, cell(npz{'Directions'}.shape));
-            Directions_py = py.numpy.array(npz{'Directions'});
-            Directions = double(Directions_py.reshape(int64(shape)));
-            shape = cellfun(@double, cell(npz{'Conf'}.shape));
-            Conf_py = py.numpy.array(npz{'Conf'});
-            Conf = double(Conf_py.reshape(int64(shape)));
-            shape = cellfun(@double, cell(npz{'C'}.shape));
-            C_py = py.numpy.array(npz{'C'});
-            C = double(C_py.reshape(int64(shape)));
-            dir = string(npz{'dir'}.item());
-            dimp = double(npz{'dimp'}.item());
-            nnv_dir = string(npz{'nnv_dir'}.item());
+        clear  Surrogate_reach
 
+        save("Matlab_data.mat", 'Lb_pixels', 'Ub_pixels', 'projection_time', 'reachability_time', 'conformal_time2')
 
-            load('trained_relu_weights_2h_norm.mat')
-            Small_net.weights = {double(W1) , double(W2), double(W3)};
-            Small_net.biases = {double(b1)' , double(b2)', double(b3)'};
-                                
-            l1 = size(W1,1);
-            l2 = size(W2,1);
-            l0 = size(W1,2);
-            
-            L = cell(l1,1);
-            L(:) = {'poslin'};
-            Small_net.layers{1} = L ;
-            L = cell(l2,1);
-            L(:) = {'poslin'};
-            Small_net.layers{2} = L ;
-            
-            dim2 = length(Conf);
-            
-            tic
-            H.V = [sparse(dim2,1) speye(dim2)];
-            H.C = sparse(1,dim2);
-            H.d = 0;
-            H.predicate_lb = -Conf.';
-            H.predicate_ub =  Conf.';
-            H.dim = dim2;
-            H.nVar= dim2;
-            %%%%%%%%%%%%%%%
-            conformal_time2 = toc;
-            
-            
-            
-            addpath(genpath(dir))
-            addpath(genpath(nnv_dir))
-            
-            tic
-            %%%%%%%%%%%%%%
-            I = Star();
-            I.V = [0.5*ones(l0,1)  eye(l0)];
-            I.C = zeros(1,l0);
-            I.d = 0;
-            I.predicate_lb = -0.5*ones(l0,1);
-            I.predicate_ub =  0.5*ones(l0,1);
-            I.dim =  l0;
-            I.nVar = l0;
-            
-            
-            Principal_reach = ReLUNN_Reachability_starinit(I, Small_net, 'approx-star');
-            Surrogate_reach = affineMap(Principal_reach , Directions.' , C.');
-            
-            %%%%%%%%%%%%%%
-            reachability_time = toc;
-            clear Principal_reach
-            
-            tic
-            %%%%%%%%%%%%%%
-            P_Center = sparse(double(Surrogate_reach.V(:,1)));
-            P_lb = double([Surrogate_reach.predicate_lb ; H.predicate_lb]);
-            P_ub = double([Surrogate_reach.predicate_ub ; H.predicate_ub]);
-            
-            
-            P_V = [double(Surrogate_reach.V(:,2:end))   double(H.V(:,2:end))];
-            Lb = P_Center + 0.5*(P_V + abs(P_V))*P_lb + 0.5*(P_V - abs(P_V))*P_ub;
-            Ub = P_Center + 0.5*(P_V + abs(P_V))*P_ub + 0.5*(P_V - abs(P_V))*P_lb;
-            
-            
-            Lb_pixels = reshape(Lb , [dimp, dim2/dimp]);
-            Ub_pixels = reshape(Ub , [dimp, dim2/dimp]);
-            %%%%%%%%%%%%%%
-            projection_time = toc;
-            
-            clear  Surrogate_reach
-            
-            save("Matlab_data.mat", 'Lb_pixels', 'Ub_pixels', 'projection_time', 'reachability_time', 'conformal_time2')
-            
-            """
-            
-
-            
+        """
+        
         eng.eval(matlab_code, nargout=0)
         eng.quit()
 
@@ -468,36 +263,70 @@ class ReachabilityAnalyzer:
     
     def Verify_with_ReLU_surrogate(self):
         
+        Nt = self.params['Nt']
+        N_dir = self.params['N_dir']
+       
         
-        res_max, C, Directions, small_net, trn_time1, train_data_run_1, Direction_Training_time, Model_training_time = self.Shape_residual()
+        assert N_dir <= Nt, "Requested more samples than available!"
+
+        selected_indices = torch.randperm(Nt)[:N_dir]
         
-        Conf, R_star, conformal_time, res_test_time, test_data_run = self.CI_ReLU_surrogate(small_net, C, res_max, Directions)
+        Y, X, train_data_run_1 = self.generate_data(Nt, 0)
+        
+        X_dir = X[selected_indices, ...].to(self.device)
+        Y_dir = Y[selected_indices, ...].to(self.device)
+        
         
 
+        Directions, Direction_Training_time = compute_directions(Y_dir, self.device, self.params['trn_batch'])
+
+        Directions = torch.stack([d.squeeze(-1) for d in Directions])
+
+
+        C = 20 * (0.001 * Y.mean(dim=0) + (0.05 - 0.001) * 0.5 * (Y.min(dim=0).values + Y.max(dim=0).values))
+        dY = Y - C.unsqueeze(0)
+        dYV = dY @ Directions.T
+
+        torch.cuda.empty_cache()
+
+
+        
         current_dir = os.getcwd()
-        file_name = 'python_data'
+        save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
+        small_net, Model_training_time = Trainer_ReLU(X, dYV, self.device, self.params['epochs'], save_path)
+            
+        with torch.no_grad():
+            pred = small_net(X) 
+
+            approx_Y = pred @ Directions  + C.unsqueeze(0)  # shape: same as Y
+
+        t0 = time()
+        residuals = (Y - approx_Y).abs()
+        res_max = residuals.max(dim=0).values
+        tn = self.params['threshold_normal']
+        res_max[res_max < tn ] = tn
+        
+        del Y, approx_Y, pred
+        
+        trn_time1 = time()-t0
+
+        
+        Conf, R_star, conformal_time, res_test_time, test_data_run = self.CI_ReLU_surrogate(small_net, C, res_max, Directions)
+
+
+        current_dir = os.getcwd()
+        save_path = os.path.join(current_dir, 'python_data.mat')
         c = C.cpu().numpy()
         conf = Conf.cpu().numpy()
         directions = Directions.cpu().numpy()
         
-        size_in_bytes = directions.nbytes
-        if size_in_bytes < 1.5 * 1024**3:
-            save_path = os.path.join(current_dir, file_name+'.mat')
-            save_mode = 1
-            scipy.io.savemat(save_path, {
-                'Conf': conf, 'C': c, 'Directions': directions, 'dir': self.src_dir,
-                'dimp': self.original_dim[1]*self.original_dim[2], 'nnv_dir': self.nnv_dir} )
-        else:
-            save_path = os.path.join(current_dir, file_name)
-            save_mode = 2
-            np.savez(save_path, Conf = conf, C = c, Directions = directions, dir = self.src_dir,
-                                dimp = self.original_dim[1]*self.original_dim[2], nnv_dir = self.nnv_dir)
-
-        
+        scipy.io.savemat(save_path, {
+            'Conf': conf, 'C': c, 'Directions': directions, 'dir': self.src_dir,
+            'dimp': self.original_dim[1]*self.original_dim[2], 'nnv_dir': self.nnv_dir} )
 
         del conf, c, directions
     
-        self.call_MATLAB_for_star(save_mode)
+        self.call_MATLAB_for_star()
     
         current_dir = os.getcwd()
         mat_file_path = os.path.join(current_dir, 'Matlab_data.mat')
@@ -708,14 +537,6 @@ if __name__ == '__main__':
     model_path = os.path.join(repo_root, 'benchmarks', 'Lung_Segmentation', 'models', model_name)
     image_path = os.path.join(repo_root, 'benchmarks', 'Lung_Segmentation', 'images', image_name)
     src_dir =  os.path.join(repo_root, 'src')
-    nnv_dir = 'C:\\Users\\navid\\Documents\\nnv'
-    
-    if not os.path.isdir(nnv_dir):
-        sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
-                 f"Please check the path and ensure NNV is properly installed.")
-
-    print(f"✅ NNV directory found at: {nnv_dir}")
-    
 
     ort_session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])
 
@@ -727,8 +548,8 @@ if __name__ == '__main__':
     
     
     img_tensor = torch.from_numpy(img).to(device)
-    x = img_tensor.to(torch.float16)  # Use half precision
-    x_numpy = x.cpu().numpy().astype(np.float32)
+    # x = img_tensor.to(torch.float16)  # Use half precision
+    x_numpy = img_tensor.cpu().numpy().astype(np.float32)
     output = ort_session.run(None, {'input': x_numpy})
     output = torch.tensor(output[0]).to(device)
     
@@ -786,23 +607,14 @@ if __name__ == '__main__':
         mode = surrogate_mode,
         class_threshold = 0,
         src_dir = src_dir,
-        nnv_dir = nnv_dir,
         params=params
     )
     analyzer.Mask_titles()
     
     remove_path =  os.path.join(current_dir, 'Matlab_data.mat')
     os.remove(remove_path)
-    
-    
-    path1 = os.path.join(current_dir, 'python_data.mat')
-    path2 = os.path.join(current_dir, 'python_data.npz')
-    if os.path.exists(path1):
-        os.remove(path1)
-    elif os.path.exists(path2):
-        os.remove(path2)
-
-
+    remove_path =  os.path.join(current_dir, 'python_data.mat')
+    os.remove(remove_path)
     if surrogate_mode == 'ReLU':
         remove_path =  os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
         os.remove(remove_path)

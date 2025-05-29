@@ -18,7 +18,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 root_dir = pathlib.Path(__file__).resolve().parents[2]
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
-from Reach4SSN import ReachabilityAnalyzer
+from Reach4SSN0 import ReachabilityAnalyzer
 
 
 def M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
@@ -34,7 +34,7 @@ def M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
     
     # Load MATLAB data
     mat = scipy.io.loadmat(image_path)
-    images = mat['im_data']  # (64, 84, 1000)
+    images = mat['im_data']  
     image = images[:,:,image_number]
     image = image[:, :, np.newaxis]
 
@@ -146,20 +146,20 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     start_loc = (0, 0)
     Ns = 100000
-    Nsp = 10000
+    Nsp = 500
     rank = 99999
     guarantee = 0.9999
     delta_rgb = 3
     de = delta_rgb
-    Nt = 10000
-    N_dir = 5000
+    Nt = 2000
+    N_dir = 200
     threshold_normal = 1e-5
-    sim_batch = 1000
-    trn_batch = 1000
-    epochs = 90
+    sim_batch = 200
+    trn_batch = 100
+    epochs = 200
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
-    nnv_dir = 'C:\\Users\\navid\\Documents\\nnv'
+    nnv_dir = '/home/hashemn/nnv'
     
     if not os.path.isdir(nnv_dir):
         sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
@@ -169,11 +169,12 @@ if __name__ == '__main__':
 
 
     # image_number_list = [ 0 ,1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-    #                 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    #                  20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     # N_perturbed_list = [17, 34, 51, 68, 85, 102]
     
-    image_number_list = [ 0 ,1 ]
-    N_perturbed_list = [17, 34]
+    image_number_list = [ 0 ]
+    N_perturbed_list = [17]
+    
     
     ii=0
     for idx, image_number in enumerate(image_number_list):

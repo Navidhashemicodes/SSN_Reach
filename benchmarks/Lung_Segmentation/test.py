@@ -15,6 +15,11 @@ import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 root_dir = pathlib.Path(__file__).resolve().parents[2]
+
+sys.path.append(root_dir)
+from utils import plot_binary_logits_to_mask
+
+
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
 
@@ -54,7 +59,7 @@ N_perturbed = 17
 surrogate_mode = 'ReLU'
 src_dir = os.path.join(root_dir, 'src')
 
-nnv_dir = 'C:\\Users\\navid\\Documents\\nnv'
+nnv_dir = '/home/hashemn/nnv'
 
 if not os.path.isdir(nnv_dir):
     sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
@@ -83,10 +88,14 @@ at_im = img.copy()
 
 
 img_tensor = torch.from_numpy(img).to(device)
-x = img_tensor.to(torch.float16)  # Use half precision
-x_numpy = x.cpu().numpy().astype(np.float32)
+# x = img_tensor.to(torch.float16)  # Use half precision
+x_numpy =  img_tensor.cpu().numpy().astype(np.float32)
 output = ort_session.run(None, {'input': x_numpy})
 output = torch.tensor(output[0]).to(device)
+
+threshold = 0
+
+plot_binary_logits_to_mask(output, threshold)
 
 output_dim = output.shape
 
