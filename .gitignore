@@ -2,6 +2,7 @@
 __pycache__/
 *.pth
 *.torch
+*.mat
 *__pycache__*
 *.pyc
 *.jpg
@@ -11,4 +12,3 @@ __pycache__/
 formulas/__pycache__/*
 *.pptx
 *.onnx
-*.mat
