@@ -11,3 +11,4 @@ __pycache__/
 formulas/__pycache__/*
 *.pptx
 *.onnx
+*.mat
