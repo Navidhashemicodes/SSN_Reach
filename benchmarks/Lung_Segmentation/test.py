@@ -9,8 +9,10 @@ import torch
 import numpy as np
 import onnxruntime as ort
 import cv2
+from PIL import Image
 import os
 import sys
+import torchvision.transforms as transforms
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
@@ -80,20 +82,27 @@ image_path = os.path.join(current_dir, 'images', image_name)
 
 ort_session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])
 
-img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # ensures it's grayscale
-img = cv2.resize(img, (512, 512))
-img = img.astype(np.float32) / 255.0
-img = img.reshape(1, 1, 512, 512)
-at_im = img.copy()
+
+eval_transforms = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((512, 512)),
+    transforms.ToTensor()
+])
 
 
-img_tensor = torch.from_numpy(img).to(device)
-# x = img_tensor.to(torch.float16)  # Use half precision
+img = Image.open(image_path).convert('L')  # 'L' mode = single-channel grayscale
+img = eval_transforms(img)
+img_tensor = img.unsqueeze(0).to(device)
+img_np = img_tensor.detach().cpu().numpy().astype(np.float32)
+
+at_im = img_np.copy()
+
+x = img_tensor.to(torch.float16)  # Use half precision
 x_numpy =  img_tensor.cpu().numpy().astype(np.float32)
 output = ort_session.run(None, {'input': x_numpy})
 output = torch.tensor(output[0]).to(device)
 
-threshold = 0
+threshold = 0.0
 
 plot_binary_logits_to_mask(output, threshold)
 
@@ -107,10 +116,10 @@ True_class = [[int(output_np[i, j] > 0) for j in range(512)] for i in range(512)
 ct = 0
 indices = []
 
-_, _, H, W = img.shape
+_, _, H, W = img_np.shape
 for i in range(start_loc[0], H):
     for j in range(start_loc[1], W):
-        if np.min(img[:,:,i, j]) > 150 / 255.0:
+        if np.min(img_np[:,:,i, j]) > 150 / 255.0:
             at_im[:,:,i, j] = 0.0
             indices.append([i, j])
             ct += 1
@@ -120,11 +129,12 @@ for i in range(start_loc[0], H):
     if ct == N_perturbed:
         break
 
+dims = ['auto' , 'auto']
 indices = np.array(indices)
 at_im_tensor = torch.from_numpy(at_im).to(device)
 params = {
     'N_perturbed' : N_perturbed,
-    'de' : de,
+    'delta_rgb' : delta_rgb,
     'image_name' : image_name,
     'Nt' : Nt,
     'N_dir' : N_dir,
@@ -137,6 +147,7 @@ params = {
     'sim_batch' : sim_batch,
     'epochs' : epochs,
     'device' : device,
+    'dims' : dims
 }
 analyzer = ReachabilityAnalyzer(
     True_class = True_class,

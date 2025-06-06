@@ -176,7 +176,7 @@ class ReachabilityAnalyzer:
         
         current_dir = os.getcwd()
         save_path = os.path.join(current_dir, 'trained_relu_weights_2h_norm.mat')
-        small_net, Model_training_time = Trainer_ReLU(X, dYV, self.device, self.params['epochs'], save_path)
+        small_net, Model_training_time = Trainer_ReLU(X, dYV, self.device, self.params['dims'], self.params['epochs'], save_path)
             
         
         trn_time1_l = []
@@ -499,6 +499,8 @@ class ReachabilityAnalyzer:
         del conf, c, directions
     
         self.call_MATLAB_for_star(save_mode)
+        
+        print('Reachability is finished and projection is done!!')
     
         current_dir = os.getcwd()
         mat_file_path = os.path.join(current_dir, 'Matlab_data.mat')
@@ -666,7 +668,7 @@ class ReachabilityAnalyzer:
         
         # save_name = f"CI_result_middle_guarantee_ReLU_relaxed_eps_{delta_rgb}_Npertubed_{N_perturbed}"+image_name+".pt"
         base_name = os.path.splitext(self.image_name)[0]
-        save_name = f"CI_result_middle_guarantee_ReLU_relaxed_eps_{self.de}_Npertubed_{N_perturbed}_{base_name}.pt"
+        save_name = f"CI_result_middle_guarantee_ReLU_relaxed_eps_{self.params['delta_rgb']}_Npertubed_{N_perturbed}_{base_name}.pt"
         torch.save(save_dict, save_name)
         
         

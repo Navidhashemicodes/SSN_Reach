@@ -102,6 +102,6 @@ output = net(img_tensor)
 
 print(output-output0)
 
-
-plot_binary_logits_to_mask(output)
-plot_binary_logits_to_mask(output0)
+threshold = np.log(45/55)
+plot_binary_logits_to_mask(output, threshold)
+plot_binary_logits_to_mask(output0, threshold)

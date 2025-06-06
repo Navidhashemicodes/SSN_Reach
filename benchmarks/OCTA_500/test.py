@@ -94,8 +94,8 @@ at_im = img_np.copy()
 output = ort_session.run(None, {'input': img_np})
 output = torch.tensor(output[0]).to(device)
 
-
-plot_binary_logits_to_mask(output)
+threshold = np.log(45/55)
+plot_binary_logits_to_mask(output,threshold)
 
 
 output_dim = output.shape
@@ -125,11 +125,12 @@ for i in range(start_loc[0], H):
     if ct == N_perturbed:
         break
 
+dims = ['auto' , 'auto']
 indices = np.array(indices)
 at_im_tensor = torch.from_numpy(at_im).to(device)
 params = {
-    'N_perturbed' : N_perturbed,
-    'de' : de,
+    'N_perturbed' : len(indices),
+    'delta_rgb' : delta_rgb,
     'image_name' : image_name,
     'Nt' : Nt,
     'N_dir' : N_dir,
@@ -142,6 +143,7 @@ params = {
     'sim_batch' : sim_batch,
     'epochs' : epochs,
     'device' : device,
+    'dims' : dims
 }
 analyzer = ReachabilityAnalyzer(
     True_class = True_class,

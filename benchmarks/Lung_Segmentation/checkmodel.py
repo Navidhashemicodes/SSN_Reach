@@ -24,19 +24,11 @@ from utils import plot_binary_logits_to_mask
 
 
 
-
-def convert_batchnorm_to_instancenorm(model):
-    for name, module in model.named_children():
-        if isinstance(module, nn.BatchNorm2d):
-            num_features = module.num_features
-            inst_norm = nn.InstanceNorm2d(num_features, affine=True)
-            setattr(model, name, inst_norm)
-        else:
-            convert_batchnorm_to_instancenorm(module)
-    return model
-
-
-
+eval_transforms = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((512, 512)),
+    transforms.ToTensor()
+])
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -49,26 +41,23 @@ current_dir = os.getcwd()
 model_path = os.path.join(current_dir, 'models', model_name)
 image_path = os.path.join(current_dir, 'images', image_name)
 
+img = Image.open(image_path).convert('L')  # 'L' mode = single-channel grayscale
+img = eval_transforms(img)
+img = img.unsqueeze(0)
 
-img = Image.open(image_path)
-to_tensor = transforms.ToTensor()
-img = to_tensor(img)
-Resize = transforms.Resize((512,512))
-img = Resize(img)
-# img = img.reshape([1,1,512,512])
+
 
 
 from model.unet import UNet
 
 net = UNet(n_channels=1, n_classes=1)
 
-net.load_state_dict(torch.load("model/model_weights.pth"))
+R = torch.load('best_checkpoint.pt')
 
-# torch.serialization.add_safe_globals([UNet])
-# net = torch.load("pymodel.pth", weights_only=False)
-net = convert_batchnorm_to_instancenorm(net)
-net = net.to(device)
+net.load_state_dict(R['model_state_dict'])
 net.eval()
+net = net.to(device)
+
 
 
 dummy_input = torch.randn(1, 1,512, 512).to(device)

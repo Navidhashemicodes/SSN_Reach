@@ -20,11 +20,13 @@ reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
 from Reach4SSN import ReachabilityAnalyzer
 
-
 def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
                   Ns, Nsp, rank, guarantee, device,  threshold_normal,
-                  sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir):
-        
+                  sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims):
+    
+    
+    
+    de = delta_rgb / 255.0
     model_name = 'BiSeNet.onnx'
 
     current_dir = os.getcwd()
@@ -67,7 +69,6 @@ def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
 
     at_im_norm = (at_im - mean_vals) / std_vals
 
-
     img_norm = (img_np - mean_vals) / std_vals
     img_tensor = torch.from_numpy(img_norm).to(device)
     x = img_tensor.to(torch.float16)  # Use half precision
@@ -85,10 +86,13 @@ def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
 
 
     at_im_tensor = torch.from_numpy(at_im_norm).to(device)
+    
+
+    
     params = {
         'N_perturbed' : N_perturbed,
-        'de' : de,
         'image_name' : image_name,
+        'delta_rgb': delta_rgb,
         'Nt' : Nt,
         'N_dir' : N_dir,
         'Ns' : Ns,
@@ -100,13 +104,14 @@ def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
         'sim_batch' : sim_batch,
         'epochs' : epochs,
         'device' : device,
+        'dims' : dims
     }
     analyzer = ReachabilityAnalyzer(
         True_class = True_class,
         model = ort_session,
         image_name = image_name,
         LB = at_im_tensor,
-        de = de,
+        de = torch.tensor(de/std_vals).to(device),
         indices = indices,
         original_dim = (3, 720, 960),
         output_dim = output_dim,
@@ -156,21 +161,20 @@ if __name__ == '__main__':
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     start_loc = (0, 0)
-    Ns = 8000
-    Nsp =  150
-    rank = 7999
+    Ns = 80#8000
+    Nsp =  80#150
+    rank = 79#7999
     guarantee = 0.999
-    delta_rgb = 3
-    de = delta_rgb / 255.0
-    Nt = 2100
-    N_dir = 150
+    Nt = 20#2100
+    N_dir = 20#150
     threshold_normal = 1e-5
     sim_batch = 5
     trn_batch = 10
-    epochs = 200
+    epochs = 10#200
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
     nnv_dir = '/home/hashemn/nnv'
+    dims = ['auto' , 'auto']
     
     if not os.path.isdir(nnv_dir):
         sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
@@ -191,7 +195,8 @@ if __name__ == '__main__':
         'Seq05VD_f02070.png',
         'Seq05VD_f03540.png'
         ]
-    image_names = ['Seq05VD_f03540.png']
+    
+    delta_rgb = 3
 
     N_perturbed_list = [17, 34, 51, 68, 85, 102]
     
@@ -204,4 +209,4 @@ if __name__ == '__main__':
             ii = ii+1
             CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
                           Ns, Nsp, rank, guarantee, device,  threshold_normal,
-                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir)
+                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims)
