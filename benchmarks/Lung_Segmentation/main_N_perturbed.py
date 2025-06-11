@@ -167,7 +167,10 @@ if __name__ == '__main__':
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
     nnv_dir = '/home/hashemn/nnv'
+<<<<<<<< HEAD:benchmarks/Lung_Segmentation/main_N_perturbed.py
     dims = ['auto' , 'auto']
+========
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/Lung_Segmentation/main.py
     
     if not os.path.isdir(nnv_dir):
         sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
@@ -211,4 +214,8 @@ if __name__ == '__main__':
             ii = ii+1
             CheXpert_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
                           Ns, Nsp, rank, guarantee, device,  threshold_normal,
+<<<<<<<< HEAD:benchmarks/Lung_Segmentation/main_N_perturbed.py
                           sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims)
+========
+                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir)
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/Lung_Segmentation/main.py

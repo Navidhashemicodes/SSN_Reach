@@ -19,8 +19,13 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 root_dir = pathlib.Path(__file__).resolve().parents[2]
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
+<<<<<<< HEAD
 from Provision import Reachability_provider
 from Segmentation import Segmentor
+=======
+from SSN_provider import Reachability_provider
+from SSN_classifier import classification
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
 
 
 
@@ -75,12 +80,20 @@ def OCTA_avg_exp1( start_loc, Epsi,  Nt, N_dir,
         'perturbation' : Epsi*255,
         'True_class' : True_class,
         'class_threshold' : threshold,
+<<<<<<< HEAD
         'image_name' : image_name,
         'input_name' : 'input'
     }
     
     
     provide = Reachability_provider(
+=======
+        'image_name' : image_name
+    }
+    
+    
+    provider = Reachability_provider(
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
         de = de,
         indices = indices,
         device = device,
@@ -92,7 +105,11 @@ def OCTA_avg_exp1( start_loc, Epsi,  Nt, N_dir,
         params = params
         )
     
+<<<<<<< HEAD
     provide.Provider()
+=======
+    provider.Provider()
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
 
 
 
@@ -104,14 +121,22 @@ def OCTA_avg_exp2( projection_batch, guarantee, device, src_dir, nnv_dir ):
         'guarantee': guarantee,
     }
     
+<<<<<<< HEAD
     Segment = Segmentor(
+=======
+    classifier = classification(
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
         device = device,
         src_dir = src_dir,
         nnv_dir = nnv_dir,
         params = params
         )
 
+<<<<<<< HEAD
     Segment.Mask_titles()
+=======
+    classifier.Mask_titles()
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
 
 
 

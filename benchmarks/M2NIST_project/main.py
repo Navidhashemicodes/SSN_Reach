@@ -18,7 +18,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 root_dir = pathlib.Path(__file__).resolve().parents[2]
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
-from Reach4SSN import ReachabilityAnalyzer
+from Reach4SSN0 import ReachabilityAnalyzer
 
 
 def M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
@@ -154,7 +154,11 @@ if __name__ == '__main__':
     delta_rgb = 3
     de = delta_rgb
     Nt = 2000
+<<<<<<< HEAD
     N_dir = 2000
+=======
+    N_dir = 200
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
     threshold_normal = 1e-5
     sim_batch = 200
     trn_batch = 100
@@ -162,7 +166,11 @@ if __name__ == '__main__':
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
     nnv_dir = '/home/hashemn/nnv'
+<<<<<<< HEAD
     dims = ['auto', 'auto']
+=======
+    
+>>>>>>> 309924de7adbd067700e2848ca741849445904be
     if not os.path.isdir(nnv_dir):
         sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
                  f"Please check the path and ensure NNV is properly installed.")
@@ -187,4 +195,8 @@ if __name__ == '__main__':
             ii = ii+1
             M2NIST_exp( start_loc, N_perturbed, de, image_number, Nt, N_dir,
                           Ns, Nsp, rank, guarantee, device,  threshold_normal,
+<<<<<<< HEAD
                           sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims)
+=======
+                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir)
+>>>>>>> 309924de7adbd067700e2848ca741849445904be

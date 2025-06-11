@@ -2,6 +2,7 @@
 __pycache__/
 *.pth
 *.torch
+*.mat
 *__pycache__*
 *.pyc
 *.jpg

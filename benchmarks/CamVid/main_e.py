@@ -19,7 +19,10 @@ root_dir = pathlib.Path(__file__).resolve().parents[2]
 reach_factory_path = os.path.join(root_dir, 'Reach_Factory')
 sys.path.append(reach_factory_path)
 from Reach4SSN import ReachabilityAnalyzer
+<<<<<<<< HEAD:benchmarks/CamVid/main_e.py
 
+========
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/CamVid/main.py
 
 def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
                   Ns, Nsp, rank, guarantee, device,  threshold_normal,
@@ -87,6 +90,9 @@ def CamVid_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
 
 
     at_im_tensor = torch.from_numpy(at_im_norm).to(device)
+    
+
+    
     params = {
         'N_perturbed' : N_perturbed,
         'image_name' : image_name,
@@ -159,6 +165,7 @@ if __name__ == '__main__':
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     start_loc = (0, 0)
+<<<<<<<< HEAD:benchmarks/CamVid/main_e.py
     Ns = 8000
     Nsp =  150
     rank = 7999
@@ -169,6 +176,18 @@ if __name__ == '__main__':
     sim_batch = 5
     trn_batch = 10
     epochs = 200
+========
+    Ns = 80#8000
+    Nsp =  80#150
+    rank = 79#7999
+    guarantee = 0.999
+    Nt = 20#2100
+    N_dir = 20#150
+    threshold_normal = 1e-5
+    sim_batch = 5
+    trn_batch = 10
+    epochs = 10#200
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/CamVid/main.py
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
     nnv_dir = '/home/hashemn/nnv'
@@ -193,7 +212,12 @@ if __name__ == '__main__':
         'Seq05VD_f02070.png',
         'Seq05VD_f03540.png'
         ]
+<<<<<<<< HEAD:benchmarks/CamVid/main_e.py
     # image_names = ['Seq05VD_f03540.png']
+========
+    
+    delta_rgb = 3
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/CamVid/main.py
 
     N_perturbed =  102
 
