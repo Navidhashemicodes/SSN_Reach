@@ -26,8 +26,23 @@ def estimate_lipschitz(x, y, num_samples=1000):
 
     return max(slopes)
 
+class ReLUNetwork(nn.Module):
+    def __init__(self, input_dim, hidden_dim1, hidden_dim2, output_dim):
+        super(ReLUNetwork, self).__init__()
+        self.hidden1 = nn.Linear(input_dim, hidden_dim1)
+        self.relu = nn.ReLU()
+        self.hidden2 = nn.Linear(hidden_dim1, hidden_dim2)
+        self.output = nn.Linear(hidden_dim2, output_dim)
 
-def Trainer_ReLU(x , y , device, epochs, save_path):
+    def forward(self, x):
+        x = self.hidden1(x)
+        x = self.relu(x)
+        x = self.hidden2(x)
+        x = self.relu(x)
+        x = self.output(x)
+        return x
+
+def Trainer_ReLU(x , y , device, dims, epochs, save_path):
     
     x = x.to(device)
     y = y.to(device)
@@ -52,27 +67,26 @@ def Trainer_ReLU(x , y , device, epochs, save_path):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # Define Neural Network Model with Two Hidden Layers
-    class ReLUNetwork(nn.Module):
-        def __init__(self, input_dim, hidden_dim1, hidden_dim2, output_dim):
-            super(ReLUNetwork, self).__init__()
-            self.hidden1 = nn.Linear(input_dim, hidden_dim1)
-            self.relu = nn.ReLU()
-            self.hidden2 = nn.Linear(hidden_dim1, hidden_dim2)
-            self.output = nn.Linear(hidden_dim2, output_dim)
+    
 
-        def forward(self, x):
-            x = self.hidden1(x)
-            x = self.relu(x)
-            x = self.hidden2(x)
-            x = self.relu(x)
-            x = self.output(x)
-            return x
-
+    
+    assert len(dims) == 2
+    
     # Define Model and move to GPU
     input_dim   = x.shape[1]
-    hidden_dim1 = input_dim
     output_dim  = y.shape[1]
-    hidden_dim2 = output_dim
+    
+    if dims[0] == 'auto':
+        hidden_dim1 = input_dim
+    else:
+        hidden_dim1= dims[0]
+        
+        
+    if dims[1] == 'auto':
+        hidden_dim2 = output_dim
+    else:
+        hidden_dim2 = dims[1]
+    
     model = ReLUNetwork(input_dim, hidden_dim1, hidden_dim2, output_dim).to(device)
 
     # Define Loss and Optimizer

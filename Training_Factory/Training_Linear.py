@@ -4,25 +4,31 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import scipy.io
 from time import time
+import gc
+
+
+# Define Linear Model
+class LinearModel(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(LinearModel, self).__init__()
+        self.linear = nn.Linear(input_dim, output_dim)  # y = W*x + b
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+
 
 def Trainer_Linear(x , y , device, epochs, save_path):
-    x = x.T.to(device)
-    y = y.T.to(device)
-
+    x = x.to(device)
+    y = y.to(device)
 
     # Create a dataset and DataLoader for mini-batch training
     batch_size = 100  # Adjust based on your GPU memory
     dataset = TensorDataset(x, y)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Define Linear Model
-    class LinearModel(nn.Module):
-        def __init__(self, input_dim, output_dim):
-            super(LinearModel, self).__init__()
-            self.linear = nn.Linear(input_dim, output_dim)  # y = W*x + b
-
-        def forward(self, x):
-            return self.linear(x)
+    
 
     # Define Model and move to GPU
     input_dim = x.shape[1]  # 5376
@@ -32,7 +38,7 @@ def Trainer_Linear(x , y , device, epochs, save_path):
     # Define Loss and Optimizer
     criterion = nn.MSELoss(reduction = 'sum')
     # criterion = nn.L1Loss(reduction = 'sum')
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.000001)
 
     # Training Loop with Mini-Batches
     
@@ -71,5 +77,9 @@ def Trainer_Linear(x , y , device, epochs, save_path):
     print(f"Trained parameters saved to {save_path}")
     
     train_time = time() - t0
+    
+    del x, y, x_batch, y_batch, y_pred 
+    gc.collect()
+    torch.cuda.empty_cache()
 
     return model, train_time 

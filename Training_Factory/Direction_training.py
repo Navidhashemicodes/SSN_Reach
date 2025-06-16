@@ -18,6 +18,9 @@ def compute_f(A, X_batch):
     
     # Compute covariance
     cov_batch = (1 / (norm_A2)) * torch.sqrt( torch.sum(torch.pow(A_X, 2)) / N )
+    
+    del X_batch
+    
     return cov_batch
 
 
@@ -139,5 +142,9 @@ def compute_directions(X , device, batch_size):
     print("Principal directions found:")
     for i, A in enumerate(A_list):
         print(f"A{i+1}: {A}")
+        
+    del X
+    gc.collect()
+    torch.cuda.empty_cache()
         
     return A_list , Direction_training_time

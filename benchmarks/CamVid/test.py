@@ -107,7 +107,7 @@ for i in range(start_loc[0], H):
 
 indices = np.array(indices)
 
-
+dims = ['auto' , 'auto']
 
 # --- Normalize image ---
 mean_vals = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
@@ -149,6 +149,7 @@ params = {
     'sim_batch' : sim_batch,
     'epochs' : epochs,
     'device' : device,
+    'dims' : dims
 }
 analyzer = ReachabilityAnalyzer(
     True_class = True_class,

@@ -120,3 +120,51 @@ def plot_logits_to_mask(logits):
     plt.axis('off')
     plt.tight_layout()
     plt.show()
+    
+    
+    
+# def plot_binary_logits_to_mask(pred):
+#     """
+#     Converts binary logits to a black-and-white segmentation mask.
+
+#     Args:
+#         logits (torch.Tensor): Shape (1, 1, H, W), raw model output (pre-sigmoid).
+#                                Positive values -> class 1 (white), Negative -> class 0 (black).
+#     """
+    
+    
+#     pred = pred.squeeze(1)  # Shape: [1, 304, 304]
+#     pred_probs = torch.sigmoid(pred)  # Shape: [1, 304, 304]
+#     pred_binary = (pred_probs > 0.45).float()  # Binary mask: [1, 304, 304]
+#     pred_binary_np = pred_binary.cpu().detach().numpy()[0]*255  # Shape: [304, 304]
+            
+#     plt.figure(figsize=(8, 6))
+#     plt.imshow(pred_binary_np, cmap='gray', vmin=0, vmax=255)
+#     plt.title("Binary Segmentation Mask")
+#     plt.axis('off')
+#     plt.tight_layout()
+#     plt.show()
+    
+    
+    
+def plot_binary_logits_to_mask(pred, threshold):
+    """
+    Converts binary logits to a black-and-white segmentation mask.
+
+    Args:
+        logits (torch.Tensor): Shape (1, 1, H, W), raw model output (pre-sigmoid).
+                               Positive values -> class 1 (white), Negative -> class 0 (black).
+    """
+    
+    
+    pred = pred.squeeze(1)  # Shape: [1, 304, 304]
+    pred_binary = (pred > threshold).float()  # Binary mask: [1, 304, 304]
+    pred_binary_np = pred_binary.cpu().detach().numpy()[0]*255  # Shape: [304, 304]
+            
+    plt.figure(figsize=(8, 6))
+    plt.imshow(pred_binary_np, cmap='gray', vmin=0, vmax=255)
+    plt.title("Binary Segmentation Mask")
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+    
