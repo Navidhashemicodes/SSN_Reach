@@ -1,14 +1,21 @@
-.idea/
-__pycache__/
-*.pth
-*.torch
+# Ignore dataset and model files
 *.mat
-*__pycache__*
-*.pyc
-*.jpg
-*.eps
+*.png
 *.fig
+*.jpg
 *.pt
-formulas/__pycache__/*
+*.bmp
+*.pth
 *.pptx
 *.onnx
+
+# Optional: Ignore backup/system files
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db
+
+# Optional: Ignore folders for experiments or logs
+logs/
+results/
+output/
