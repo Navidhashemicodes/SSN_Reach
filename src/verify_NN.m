@@ -34,13 +34,22 @@ classdef verify_NN
             
             height = obj.original_dim(2);
             width = obj.original_dim(3);
+<<<<<<< HEAD
             n_channel = obj.original_dim(1);
             Matrix = zeros(height, width, n_channel);
+=======
+            n_class = obj.original_dim(1);
+            Matrix = zeros(height, width, n_class);
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
 
             N_perturbed = size(obj.indices,1);
 
             t = 0;
+<<<<<<< HEAD
             for c = 1: n_channel
+=======
+            for c = 1: n_class
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
                 for i = 1:N_perturbed
                     index = obj.indices(i,:);
                     t = t+1;
@@ -457,11 +466,18 @@ classdef verify_NN
             name = ['CI_result_ReLU_relaxed_eps_' num2str(obj.params.delta_rgb) '_Nperturbed_' num2str(N_perturbed) 'image_' obj.params.image_name ...
                     'model_' obj.params.model_name '.mat'];
             de = obj.de; %#ok<PROP>
+<<<<<<< HEAD
             indices = obj.indices; %#ok<*PROP>
             cd(obj.params.current_dir)
             save(name, "robust", "nonrobust", "attacked", "unknown", "True_class", "classes", "Detection_table", "Conf", ...
                 "N", "N_dir", "de", "ell", "Lb_pixels", "Ub_pixels", "Ns", "R_star", ...
                 "res_max", "RV", "threshold_normal" , "verification_runtime", "indices", ...
+=======
+            cd(obj.params.current_dir)
+            save(name, "robust", "nonrobust", "attacked", "unknown", "True_class", "classes", "Detection_table", "Conf", ...
+                "N", "N_dir", "de", "ell", "Lb_pixels", "Ub_pixels", "Ns", "R_star", ...
+                "res_max", "RV", "threshold_normal" , "verification_runtime", ...
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
                 "train_data_run_1", "trn_time1", "test_data_run", "res_test_time", ...
                 "conformal_time" , "reachability_time", "projection_time", "Direction_Training_time", "Model_training_time");
         end

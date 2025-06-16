@@ -27,6 +27,14 @@ from Reach4SSN import ReachabilityAnalyzer
 def CheXpert_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
                   Ns, Nsp, rank, guarantee, device,  threshold_normal,
                   sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims):
+<<<<<<< HEAD
+<<<<<<<< HEAD:benchmarks/Lung_Segmentation/main_N_perturbed.py
+========
+    
+    de = delta_rgb / 255.0
+>>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4:benchmarks/Lung_Segmentation/main_e.py
+=======
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
         
     model_name = 'lung_segmentation.onnx'
 
@@ -83,7 +91,15 @@ def CheXpert_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
     at_im_tensor = torch.from_numpy(at_im).to(device)
     params = {
         'N_perturbed' : len(indices),
+<<<<<<< HEAD
+<<<<<<<< HEAD:benchmarks/Lung_Segmentation/main_N_perturbed.py
         'de' : de,
+========
+        'delta_rgb' : delta_rgb,
+>>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4:benchmarks/Lung_Segmentation/main_e.py
+=======
+        'de' : de,
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
         'image_name' : image_name,
         'Nt' : Nt,
         'N_dir' : N_dir,
@@ -167,7 +183,14 @@ if __name__ == '__main__':
     surrogate_mode = 'ReLU'
     src_dir = os.path.join(root_dir, 'src')
     nnv_dir = '/home/hashemn/nnv'
+<<<<<<< HEAD
     dims = ['auto' , 'auto']
+=======
+<<<<<<<< HEAD:benchmarks/Lung_Segmentation/main_N_perturbed.py
+    dims = ['auto' , 'auto']
+========
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/Lung_Segmentation/main.py
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
     
     if not os.path.isdir(nnv_dir):
         sys.exit(f"❌ Error: NNV directory not found at '{nnv_dir}'.\n"
@@ -199,16 +222,34 @@ if __name__ == '__main__':
         'MCUCXR_0354_1.png'
         ]
 
+<<<<<<< HEAD
+    N_perturbed = 102
+    
+    delta_rgb_list = [10, 30, 60, 90, 120, 150] 
+    
+    ii=0
+    for idx, image_name in enumerate(image_names):
+        for delta_rgb in delta_rgb_list:
+=======
     N_perturbed_list = [17, 34, 51, 68, 85, 102]
     # N_perturbed_list = [17, 34]
     
     ii=0
     for idx, image_name in enumerate(image_names):
         for N_perturbed in N_perturbed_list:
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
             
             print(f"Running: {image_name} with N_perturbed={N_perturbed}")
             
             ii = ii+1
             CheXpert_exp( start_loc, N_perturbed, delta_rgb, image_name, Nt, N_dir,
                           Ns, Nsp, rank, guarantee, device,  threshold_normal,
+<<<<<<< HEAD
                           sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims)
+=======
+<<<<<<<< HEAD:benchmarks/Lung_Segmentation/main_N_perturbed.py
+                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir, dims)
+========
+                          sim_batch, trn_batch, epochs, surrogate_mode, src_dir, nnv_dir)
+>>>>>>>> 309924de7adbd067700e2848ca741849445904be:benchmarks/Lung_Segmentation/main.py
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4

@@ -369,8 +369,12 @@ class Segmentor:
         "device" : self.device,
         "mode" : mode,
         "original_dim" : Data['original_dim'],
+<<<<<<< HEAD
         "output_dim" : output_dim,
         "indices" : self.indices
+=======
+        "output_dim" : output_dim
+>>>>>>> 5e09f4714c95a4b0b83c4d5522e28a97c30ee4e4
         }
 
 
